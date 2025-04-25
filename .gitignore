@@ -6,17 +6,11 @@
 *.fatbin
 
 bench/plots/figures/
-build/
-_deps/
-cmake-build-*
-compile_commands.json
-Makefile
-test/Makefile
-test/cmake_install.cmake
-CMakeCache.txt
-cmake_install.cmake
-.idea/
-/Doxygen/latex/
-/Doxygen/html/
 
-.vscode
+build/
+
+/doxygen/latex/
+/doxygen/html/
+
+.vscode/
+.idea/

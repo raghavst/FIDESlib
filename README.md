@@ -93,7 +93,7 @@ FIDESlib is currently ready to be consumed as a CMake library. The template proj
 
 ## Usage
 
-Check examples/template for a demo project that uses FIDESlib.
+Check examples for projects that use FIDESlib.
 
 ## Credits
 
