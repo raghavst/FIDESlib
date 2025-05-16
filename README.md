@@ -19,14 +19,15 @@ If you use FIDESlib on your research, please cite our ISPASS paper.
 
 ```bibtex
 @inproceedings{FIDESlib,
-  author    = {Carlos Agulló-Domingo and Óscar Vera-López and Seyda Guzelhan and Lohit Daksha and Aymane El Jerari and Kaustubh Shivdikar and Rashmi Agrawal and David Kaeli and Ajay Joshi and José L. Abellán},
-  title     = {{FIDESlib: A Fully-Fledged Open-Source FHE Library for Efficient CKKS on GPUs}},
-  booktitle = {2025 IEEE International Symposium on Performance Analysis of Systems and Software (ISPASS)},
-  year      = {2025},
-  note      = {Poster paper},
-  url       = {https://github.com/CAPS-UMU/FIDESlib},
-  publisher = {IEEE},
-  address = {Ghent, Belgium},
+	title        = {{FIDESlib: A Fully-Fledged Open-Source FHE Library for Efficient CKKS on GPUs}},
+	author       = {Carlos Agulló-Domingo and Óscar Vera-López and Seyda Guzelhan and Lohit Daksha and Aymane El Jerari and Kaustubh Shivdikar and Rashmi Agrawal and David Kaeli and Ajay Joshi and José L. Abellán},
+	year         = 2025,
+	booktitle    = {2025 IEEE International Symposium on Performance Analysis of Systems and Software (ISPASS)},
+	publisher    = {IEEE},
+	address      = {Ghent, Belgium},
+	doi          = {https://doi.org/10.1109/ISPASS64960.2025.00045},
+	url          = {https://github.com/CAPS-UMU/FIDESlib},
+	note         = {Poster paper}
 }
 ```
 
