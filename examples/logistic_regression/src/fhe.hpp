@@ -30,6 +30,11 @@ extern lbcrypto::Ciphertext<lbcrypto::DCRTPoly> phi;
  */
 extern lbcrypto::Ciphertext<lbcrypto::DCRTPoly> phi_prev;
 
+extern lbcrypto::Plaintext first_column_mask;
+extern lbcrypto::Plaintext first_column_mask_0;
+extern lbcrypto::Plaintext first_column_mask_1;
+extern lbcrypto::Plaintext first_column_mask_3;
+
 /**
 * Do bootstrapping every 2 iterations
 */
@@ -43,8 +48,9 @@ extern size_t activation_function;
 /**
  * Create a global OpenFHE context.
  * @param accelerated Use accelerated learning.
+ * @param infeence Is doing inference.
  */
-void create_cpu_context(bool accelerated);
+void create_cpu_context(bool accelerated, bool inference);
 
 /**
  * Prepare the global OpenFHE context for a specific LR workload.

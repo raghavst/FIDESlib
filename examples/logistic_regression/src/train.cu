@@ -30,7 +30,7 @@ std::vector<iteration_time_t> cpu_training(const std::vector<std::vector<double>
 
     /// --------- Create the CPU context. ---------
 
-    create_cpu_context(use_accelerated_training);
+    create_cpu_context(use_accelerated_training, false);
 
     const auto keys = cc_cpu->KeyGen();
 
@@ -79,7 +79,7 @@ std::pair<std::vector<iteration_time_t>, double> cpu_inference(const std::vector
 
     /// --------- Create the CPU context. ---------
 
-    create_cpu_context(false);
+    create_cpu_context(false, true);
 
     const auto keys = cc_cpu->KeyGen();
 
@@ -211,6 +211,7 @@ std::pair<std::vector<iteration_time_t>, double> naive_inference(const std::vect
     }
 
     const double acc = (static_cast<double>(correct) / static_cast<double>(unpacked_data.size())) * 100;
+    std::cout << acc << std::endl;
 
     std::cout << "True positives: " << tp << ", False positives: " << fp << ", True negatives: " << tn << ", False negatives: " << fn << std::endl;
     std::cout << "Correct: " << correct << " from " << unpacked_data.size() << " results. Percentage: "  << acc << "%."<< std::endl;
@@ -236,7 +237,7 @@ std::vector<iteration_time_t> gpu_training(const std::vector<std::vector<double>
 
     /// --------- Create the CPU and GPU context. ---------
 
-    create_cpu_context(use_accelerated_training);
+    create_cpu_context(use_accelerated_training, false);
 
     const auto keys = cc_cpu->KeyGen();
 
@@ -298,7 +299,7 @@ std::pair<std::vector<iteration_time_t>, double> gpu_inference(const std::vector
 
     /// --------- Create the CPU context. ---------
 
-    create_cpu_context(false);
+    create_cpu_context(false, true);
 
     const auto keys = cc_cpu->KeyGen();
 

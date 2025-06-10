@@ -21,7 +21,7 @@ find_package (OpenMP REQUIRED)
 
 # OpenFHE configuration.
 
-option (BUILD_STATIC "Set to ON to include static versions of the library" OFF)
+option (BUILD_STATIC "Set to ON to include static versions of the library" ON)
 if (OpenFHE_FOUND)
     message (STATUS "FOUND PACKAGE OpenFHE")
     message (STATUS "OpenFHE Version: ${BASE_OPENFHE_VERSION}")
@@ -48,7 +48,7 @@ link_directories (${OPENMP_LIBRARIES})
 message(STATUS ${OpenFHE_STATIC_LIBRARIES})
 
 if (BUILD_STATIC)
-    set (CMAKE_EXE_LINKER_FLAGS "${OpenFHE_EXE_LINKER_FLAGS} -static")
+    set (CMAKE_EXE_LINKER_FLAGS "${OpenFHE_EXE_LINKER_FLAGS}")
     link_libraries (${OpenFHE_STATIC_LIBRARIES})
 else ()
     set (CMAKE_EXE_LINKER_FLAGS ${OpenFHE_EXE_LINKER_FLAGS})
@@ -84,3 +84,4 @@ target_sources(logistic_regression PRIVATE ${CXX_SOURCE_FILES} ${CUDA_SOURCE_FIL
 
 target_link_libraries (logistic_regression PUBLIC OpenMP::OpenMP_CXX)
 target_link_libraries (logistic_regression PRIVATE FIDESlib::fideslib)
+

@@ -139,8 +139,8 @@ int main(const int argc, char **argv) {
         bootstrap_every_two = false;
         auto time_file_train = times_path(dataset, TRAIN, backend);
         auto time_file_val = times_path(dataset, VALIDATION, backend);
-
-        for (size_t i = 0; i < iterations; i++) {
+        
+        for (size_t i = 0; i < iterations; ++i) {
 
             std::vector<iteration_time_t> times_train;
             std::vector<iteration_time_t> times_val;
@@ -191,7 +191,7 @@ int main(const int argc, char **argv) {
             print_times(time_file_val, times_val, i, false, activation_function, accuracy, VALIDATION);
         }
 
-        for (size_t i = 0; i < iterations; i++) {
+        for (size_t i = 0; i < iterations; ++i) {
 
             std::vector<iteration_time_t> times_train;
             std::vector<iteration_time_t> times_val;
@@ -199,7 +199,7 @@ int main(const int argc, char **argv) {
 
             std::vector<double> weights;
             generate_weights(num_features_train, weights);
-
+            
             switch (backend) {
                 case NAIVE:
                     times_train = naive_training(data_train, results_train, weights, i, true);
@@ -215,7 +215,7 @@ int main(const int argc, char **argv) {
             }
 
             print_times(time_file_train, times_train, i, true, activation_function, 0.0, TRAIN);
-
+            
             switch (backend) {
                 case NAIVE: {
                     const auto res = naive_inference(data_val, results_val, weights);
@@ -238,15 +238,15 @@ int main(const int argc, char **argv) {
                 default:
                     exit(EXIT_FAILURE);
             }
-
+            
             print_times(time_file_val, times_val, i, true, activation_function, accuracy, VALIDATION);
         }
-
+        
         bootstrap_every_two = true;
         time_file_train = times_path(dataset, TRAIN, backend);
         time_file_val = times_path(dataset, VALIDATION, backend);
-
-        for (size_t i = 0; i < iterations; i++) {
+        
+        for (size_t i = 0; i < iterations; ++i) {
 
             std::vector<iteration_time_t> times_train;
             std::vector<iteration_time_t> times_val;
@@ -296,9 +296,9 @@ int main(const int argc, char **argv) {
 
             print_times(time_file_val, times_val, i, false, activation_function, accuracy, VALIDATION);
         }
-
-        for (size_t i = 0; i < iterations; i++) {
-
+        
+        for (size_t i = 0; i < iterations; ++i) {
+  
             std::vector<iteration_time_t> times_train;
             std::vector<iteration_time_t> times_val;
             double accuracy = 0.0;
@@ -347,7 +347,7 @@ int main(const int argc, char **argv) {
 
             print_times(time_file_val, times_val, i, true, activation_function, accuracy, VALIDATION);
         }
-
+        
     }
     else return EXIT_FAILURE;
 

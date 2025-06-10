@@ -28,10 +28,8 @@ x_38 = pd.DataFrame(x_38)
 delete_cols = False
 for i in range(0, 784, 28):
     if delete_cols:
-        print([i for i in range(i, (i+28))])
         x_38 = x_38.drop([i for i in range(i, (i+28))], axis='columns')
     else:
-        print([i for i in range(i+1, (i+28), 2)])
         x_38 = x_38.drop([i for i in range(i+1, (i+28), 2)], axis='columns')
     delete_cols = not delete_cols
 

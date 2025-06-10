@@ -34,8 +34,6 @@ std::vector<FIDESlib::PrimeRecord> sp64{
 
 FIDESlib::CKKS::Parameters params{.logN = 16, .L = 29, .dnum = 4, .primes = p64, .Sprimes = sp64, .batch=12};
 
-std::unique_ptr<FIDESlib::CKKS::Plaintext> first_column_mask_gpu = nullptr;
-
 void prepare_gpu_context(FIDESlib::CKKS::Context &cc_gpu, const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys, const size_t matrix_cols, const size_t matrix_rows) {
 	// Safety check
 	if (matrix_cols*matrix_rows != num_slots) {
@@ -64,18 +62,6 @@ void prepare_gpu_context(FIDESlib::CKKS::Context &cc_gpu, const lbcrypto::KeyPai
 		col_rot_key_gpu.Initialize(cc_gpu, col_rot_key);
 		cc_gpu.AddRotationKey(static_cast<int>(i),std::move(col_rot_key_gpu));
 	}
-	// First column matrix mask creation.
-	auto naive_1st_col_mask = std::vector<double>(matrix_cols*matrix_rows, 0);
-	for (size_t i = 0; i < matrix_cols*matrix_rows; i+=matrix_cols) {
-		naive_1st_col_mask[i] = 1;
-	}
-	auto first_column_mask = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask);
-	auto raw_pt = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask);
-
-	if (first_column_mask_gpu == nullptr) {
-		first_column_mask_gpu = std::make_unique<FIDESlib::CKKS::Plaintext>(FIDESlib::CKKS::Plaintext(cc_gpu, raw_pt));
-	}
-
 
 	// Bootstrapping config.
 	FIDESlib::CKKS::AddBootstrapPrecomputation(cc_cpu, keys, static_cast<int>(matrix_cols), cc_gpu);
@@ -108,22 +94,28 @@ void move_back(const FIDESlib::CKKS::Context &cc_gpu, std::vector<lbcrypto::Ciph
 }
 
 /**
- * Approximation of the sigmoid function.
+ * Approximation of the sigmoid function. Fused masking
  * @param ct FIDESlib ciphertext.
  */
-void activation_function_cpu(FIDESlib::CKKS::Ciphertext &ct) {
-	// Auxiliary ciphertext.
+void activation_function_gpu(FIDESlib::CKKS::Ciphertext &ct, FIDESlib::CKKS::Plaintext &mask_0, FIDESlib::CKKS::Plaintext &mask_1, FIDESlib::CKKS::Plaintext &mask_3) {
+	// Auxiliary ciphertexts.
 	FIDESlib::CKKS::Ciphertext ct3(ct.cc);
+    FIDESlib::CKKS::Ciphertext ct_aux(ct.cc);
 	ct3.copy(ct);
-	// Get the x^3 term.
+	ct_aux.copy(ct);
+
+	// Compute -0.0015x
+	ct_aux.multPt(mask_3);
+
+	// Get the -0.0015x^3 term.
 	ct3.square(FIDESlib::CKKS::Context::GetEvalKey());
-	ct3.mult(ct, FIDESlib::CKKS::Context::GetEvalKey());
-	// Multiply coefficients.
-	ct.multScalar(0.15);
-	ct3.multScalar(-0.0015);
+	ct3.mult(ct_aux, FIDESlib::CKKS::Context::GetEvalKey());
+
+	// Get 0.15x
+	ct.multPt(mask_1);
 	// Add terms.
-	ct.addScalar(0.5);
 	ct.add(ct3);
+    ct.addPt(mask_0);
 }
 
 /**
@@ -180,13 +172,24 @@ void column_accumulate(FIDESlib::CKKS::Ciphertext &ct, const size_t num_rows, co
  * @param learning_rate Desired learning rate for the iteration.
  * @return Iteration times.
  */
-iteration_time_t logistic_regression_gpu_train_iteration(const FIDESlib::CKKS::Ciphertext &data,
+iteration_time_t logistic_regression_gpu_train_iteration(FIDESlib::CKKS::Ciphertext &data,
 											 const FIDESlib::CKKS::Ciphertext &results,
 											 FIDESlib::CKKS::Ciphertext &weights,
 											 const size_t rows,
 											 const size_t columns,
 											 const size_t batch_size,
 											 const double learning_rate) {
+
+	auto raw_pt = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask);
+	auto raw_pt_0 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_0);
+	auto raw_pt_1 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_1);
+	auto raw_pt_3 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_3);
+
+	auto mask = FIDESlib::CKKS::Plaintext(data.cc, raw_pt);
+	auto mask_0 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_0);
+	auto mask_1 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_1);
+	auto mask_3 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_3);
+
 	auto start_time = std::chrono::high_resolution_clock::now();
 
 	/// Step 1. Multiply weight matrix by data matrix.
@@ -198,10 +201,10 @@ iteration_time_t logistic_regression_gpu_train_iteration(const FIDESlib::CKKS::C
 	row_accumulate(ct, columns);
 
 	/// Step 3. Apply the activation function.
-	activation_function_cpu(ct);
+	activation_function_gpu(ct, mask_0, mask_1, mask_3);
 
-	/// Step 4. Remove garbage from the ciphertext by masking the last result.
-	ct.multPt(*first_column_mask_gpu, true);
+	/// Step 4. Remove garbage from the ciphertext by masking the last result. Fused with activation
+	//ct.multPt(*first_column_mask_gpu, true);
 
 	/// Step 5. Compute loss (ours - expected).
 	ct.sub(results);
@@ -209,14 +212,14 @@ iteration_time_t logistic_regression_gpu_train_iteration(const FIDESlib::CKKS::C
 	/// Step 6. Propagation of first column value to the rest of the columns.
 	row_propagate(ct, columns);
 
-	/// Step 7. Multiply the result by the original data.
+    /// Step 7. Adjust to learning rate and batch configuration.
+    data.multScalar((learning_rate)/static_cast<double>(batch_size));
+
+	/// Step 8. Multiply the result by the original data.
 	ct.mult(data, FIDESlib::CKKS::Context::GetEvalKey());
 
-	/// Step 8. Compute the gradient loss across all data rows.
+	/// Step 9. Compute the gradient loss across all data rows.
 	column_accumulate(ct, rows, columns);
-
-	/// Step 9. Adjust to learning rate and batch configuration.
-	ct.multScalar((learning_rate)/static_cast<double>(batch_size));
 
 	/// Step 10. Update original weights.
 	weights.sub(ct);
@@ -280,6 +283,18 @@ iteration_time_t logistic_regression_gpu_inference_iteration(FIDESlib::CKKS::Cip
 									   const size_t rows,
 									   const size_t columns,
 									   const size_t batch_size) {
+
+
+	auto raw_pt = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask);
+	auto raw_pt_0 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_0);
+	auto raw_pt_1 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_1);
+	auto raw_pt_3 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_3);
+
+	auto mask = FIDESlib::CKKS::Plaintext(data.cc, raw_pt);
+	auto mask_0 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_0);
+	auto mask_1 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_1);
+	auto mask_3 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_3);
+
 	auto start_time = std::chrono::high_resolution_clock::now();
 
 	/// Step 1. Multiply weight matrix by data matrix.
@@ -289,10 +304,10 @@ iteration_time_t logistic_regression_gpu_inference_iteration(FIDESlib::CKKS::Cip
 	row_accumulate(data, columns);
 
 	/// Step 3. Apply the activation function.
-	activation_function_cpu(data);
+	activation_function_gpu(data, mask_0, mask_1, mask_3);
 
 	/// Step 4. Remove garbage from the ciphertext by masking the last result.
-	data.multPt(*first_column_mask_gpu);
+	//data.multPt(*first_column_mask_gpu);
 
 	auto end_time = std::chrono::high_resolution_clock::now();
 	auto elapsed = std::chrono::duration_cast<time_unit_t>(end_time - start_time);
@@ -329,7 +344,7 @@ std::vector<iteration_time_t> logistic_regression_gpu_inference(std::vector<std:
  * @param momentum Momentum of accelerated learning.
  * @return Iteration times.
  */
-iteration_time_t logistic_regression_gpu_train_iteration_accelerated(const FIDESlib::CKKS::Ciphertext &data,
+iteration_time_t logistic_regression_gpu_train_iteration_accelerated(FIDESlib::CKKS::Ciphertext &data,
 											 const FIDESlib::CKKS::Ciphertext &results,
 											 FIDESlib::CKKS::Ciphertext &weights,
 											 const size_t rows,
@@ -340,21 +355,32 @@ iteration_time_t logistic_regression_gpu_train_iteration_accelerated(const FIDES
 											 FIDESlib::CKKS::Ciphertext &phi_gpu,
 											 FIDESlib::CKKS::Ciphertext &phi_prev_gpu) {
 
+
+	auto raw_pt = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask);
+	auto raw_pt_0 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_0);
+	auto raw_pt_1 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_1);
+	auto raw_pt_3 = FIDESlib::CKKS::GetRawPlainText(cc_cpu, first_column_mask_3);
+
+	auto mask = FIDESlib::CKKS::Plaintext(data.cc, raw_pt);
+	auto mask_0 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_0);
+	auto mask_1 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_1);
+	auto mask_3 = FIDESlib::CKKS::Plaintext(data.cc, raw_pt_3);
+											
 	const auto start_time = std::chrono::high_resolution_clock::now();
 
 	/// Step 1. Multiply weight matrix by data matrix.
 	FIDESlib::CKKS::Ciphertext ct(data.cc);
-	ct.copy(data);
-	ct.mult(weights, FIDESlib::CKKS::Context::GetEvalKey());
+
+	ct.mult(data, weights, FIDESlib::CKKS::Context::GetEvalKey());
 
 	/// Step 2. Accumulate results on the first column (inner product result).
 	row_accumulate(ct, columns);
 
 	/// Step 3. Apply the activation function.
-	activation_function_cpu(ct);
+	activation_function_gpu(ct, mask_0, mask_1, mask_3);
 
-	/// Step 4. Remove garbage from the ciphertext by masking the last result.
-	ct.multPt(*first_column_mask_gpu, true);
+	/// Step 4. Remove garbage from the ciphertext by masking the last result. Fused with activation.
+	//ct.multPt(*first_column_mask_gpu, true);
 
 	/// Step 5. Compute loss (ours - expected).
 	ct.sub(results);
@@ -362,14 +388,14 @@ iteration_time_t logistic_regression_gpu_train_iteration_accelerated(const FIDES
 	/// Step 6. Propagation of first column value to the rest of the columns.
 	row_propagate(ct, columns);
 
-	/// Step 7. Multiply the result by the original data.
+	/// Step 7. Adjust to learning rate and batch configuration.
+	data.multScalar((learning_rate)/static_cast<double>(batch_size));
+
+	/// Step 8. Multiply the result by the original data.
 	ct.mult(data, FIDESlib::CKKS::Context::GetEvalKey());
 
-	/// Step 8. Compute the gradient loss across all data rows.
+	/// Step 9. Compute the gradient loss across all data rows.
 	column_accumulate(ct, rows, columns);
-
-	/// Step 9. Adjust to learning rate and batch configuration.
-	ct.multScalar((learning_rate)/static_cast<double>(batch_size));
 
 	// Step 10. Calculate current momentum.
 	weights.sub(ct);
@@ -418,6 +444,7 @@ std::vector<iteration_time_t> logistic_regression_gpu_train_accelerated(const st
 
 	auto phi_gpu = FIDESlib::CKKS::Ciphertext(weights.cc, FIDESlib::CKKS::GetRawCipherText(cc_cpu, phi));
 	auto phi_prev_gpu = FIDESlib::CKKS::Ciphertext(weights.cc, FIDESlib::CKKS::GetRawCipherText(cc_cpu, phi_prev));
+
 	std::vector<iteration_time_t> times(training_iterations);
 	std::cout << "Doing " << training_iterations << " training iterations (NAG)" << std::endl;
 	for (size_t it = 0; it < training_iterations; ++it) {
