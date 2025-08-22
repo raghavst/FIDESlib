@@ -5,6 +5,8 @@
 #ifndef GPUCKKS_BOOTSTRAPPRECOMPUTATION_CUH
 #define GPUCKKS_BOOTSTRAPPRECOMPUTATION_CUH
 
+#define AFFINE_LT true
+
 #include <vector>
 #include "Plaintext.cuh"
 namespace FIDESlib::CKKS {
@@ -29,6 +31,7 @@ class BootstrapPrecomputation {
 
     std::vector<LTstep> StC;
     std::vector<LTstep> CtS;
+    int accumulate_bStep = 2;
     uint32_t correctionFactor;
 };
 

@@ -4,12 +4,12 @@
 #include <algorithm>
 #include <bit>
 #include <cassert>
-#include <execution>
 #include "ConstantsGPU.cuh"
 #include "CudaUtils.cuh"
 #include "Math.cuh"
 
 #include "CKKS/Parameters.cuh"
+#include "parallel_for.hpp"
 
 namespace FIDESlib {
 
@@ -40,6 +40,7 @@ __device__ uint64_t DecompAndModUp_matrix[MAXP * MAXD * MAXP * MAXP];
 __device__ uint64_t DecompAndModUp_matrix_shoup[MAXP * MAXD * MAXP * MAXP];
 }  // namespace Globals
 Constants host_constants;
+Constants host_constants_per_gpu[8];
 Global host_global;
 
 template <typename Scheme>
@@ -196,12 +197,10 @@ void SetupConstants(const std::vector<PrimeRecord>& q, const std::vector<std::ve
 
     {
 
-        std::vector<int> index(hC_.L + hC_.K);
-        std::iota(index.begin(), index.end(), 0);
-        std::for_each(/*std::execution::par_unseq,*/ index.begin(), index.end(), [&](int i) {
+        auto work = [&](int i) -> void const {
             if (std::is_same_v<CKKS::Parameters, Scheme>) {
                 auto param = static_cast<CKKS::Parameters>(parameters);
-                if (param.raw != nullptr) {
+                if (param.raw) {
                     if (i < hC_.L) {
                         hG_.root[i] = param.raw->root_of_unity[i];
                         //hG_.root[i] = modpow(hG_.root[i], param.raw->cyclotomic_order[i] / (N), hC_.primes[i]);
@@ -264,7 +263,8 @@ void SetupConstants(const std::vector<PrimeRecord>& q, const std::vector<std::ve
 
             for (int j = 0; j < N; ++j) {
                 int pow = 1 << (std::bit_width((uint32_t)j));
-
+                pow++;
+                pow--;
                 if (!HISU64(i)) {
                     ((uint32_t*)hG_.psi[i])[j] = ((uint32_t*)hG_.psi_no[i])[bit_reverse(j, hC_.logN)];
                     ((uint32_t*)hG_.inv_psi[i])[j] = ((uint32_t*)hG_.inv_psi_no[i])[bit_reverse(j, hC_.logN)];
@@ -331,12 +331,13 @@ void SetupConstants(const std::vector<PrimeRecord>& q, const std::vector<std::ve
                         (__uint128_t)(((uint64_t*)hG_.inv_psi[i])[j] << 1) * (1ul << 63) / hC_.primes[i];
                 }
             }
-        });
+        };
+        parallel_for(0, hC_.L + hC_.K, 1, work);
     }
 
     if (std::is_same_v<CKKS::Parameters, Scheme>) {
         auto param = static_cast<CKKS::Parameters>(parameters);
-        if (param.raw != nullptr) {
+        if (param.raw) {
             for (size_t i = 0; i < q.size(); ++i) {
                 for (int k = 0; k < N; ++k) {
                     assert(param.raw->psi[i][k] == ((uint64_t*)hG_.psi[i])[k]);
@@ -348,8 +349,7 @@ void SetupConstants(const std::vector<PrimeRecord>& q, const std::vector<std::ve
     }
 
     for (size_t i = 0; i < GPUid.size(); ++i) {
-        cudaSetDevice(0/*GPUid.at(i)*/);
-CudaCheckErrorMod;
+        cudaSetDevice(GPUid.at(i));
         for (int j = 0; j < hC_.L + hC_.K; ++j) {
             int bytes = hC_.N * ((HISU64(j)) ? sizeof(uint64_t) : sizeof(uint32_t));
 
@@ -374,26 +374,26 @@ CudaCheckErrorMod;
         }
 
         cudaMemcpyToSymbol(Globals::psi, hG_.psi_ptr[i], sizeof(Globals::psi), 0, cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
         cudaMemcpyToSymbol(G_::psi_no, hG_.psi_no_ptr[i], sizeof(hG_.psi_no_ptr[i]), 0, cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
         cudaMemcpyToSymbol(G_::psi_middle_scale, hG_.psi_middle_scale_ptr[i], sizeof(hG_.psi_middle_scale_ptr[i]), 0,
                            cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
         cudaMemcpyToSymbol(G_::inv_psi, hG_.inv_psi_ptr[i], sizeof(hG_.inv_psi_ptr[i]), 0, cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
         cudaMemcpyToSymbol(G_::inv_psi_no, hG_.inv_psi_no_ptr[i], sizeof(hG_.inv_psi_no_ptr[i]), 0,
                            cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
         cudaMemcpyToSymbol(G_::inv_psi_middle_scale, hG_.inv_psi_middle_scale_ptr[i],
                            sizeof(hG_.inv_psi_middle_scale_ptr[i]), 0, cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
         cudaMemcpyToSymbol(G_::psi_shoup, hG_.psi_barrett_ptr[i], sizeof(hG_.psi_barrett_ptr[i]), 0,
                            cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
         cudaMemcpyToSymbol(G_::inv_psi_shoup, hG_.inv_psi_barrett_ptr[i], sizeof(hG_.inv_psi_barrett_ptr[i]), 0,
                            cudaMemcpyHostToDevice);
-CudaCheckErrorMod;
+        CudaCheckErrorMod;
     }
 
     {
@@ -417,46 +417,50 @@ CudaCheckErrorMod;
             cudaMemcpyToSymbol(Globals::q_inv, hG_.q_inv, bytes, 0, cudaMemcpyHostToDevice);
             CudaCheckErrorMod;
         }
-    }for (size_t j = 0; j < smeta.size(); ++j) {
-                hC_.primeid_special_partition[j] = smeta[j].id;
-             //   hC_.primeid_flattened[SPECIAL(0, j)] = smeta[j].id;
-            }
+    }
 
-            for (size_t i = 0; i < GPUid.size(); ++i) {
-                for (size_t j = 0; j < meta[i].size(); ++j) {
-                    hC_.primeid_partition[i][j] = meta[i][j].id;
-                   // hC_.primeid_flattened[PARTITION(i, j)] = meta[i][j].id;
+    for (size_t j = 0; j < smeta.size(); ++j) {
+        hC_.primeid_special_partition[j] = smeta[j].id;
+        //   hC_.primeid_flattened[SPECIAL(0, j)] = smeta[j].id;
+    }
+    /*
+    for (size_t i = 0; i < GPUid.size(); ++i) {
+        for (size_t j = 0; j < meta[i].size(); ++j) {
+            hC_.primeid_partition[i][j] = meta[i][j].id;
+            hC_.primeid_digit[meta[i][j].id] = meta[i][j].digit;
+            // hC_.primeid_flattened[PARTITION(i, j)] = meta[i][j].id;
+        }
+
+        for (size_t j = 0; j < digitGPUid[i].size(); ++j) {
+            for (int k = 0; k < hC_.L; ++k) {
+                {
+                    int num = 0;
+                    for (auto& l : DECOMPmeta.at(i).at(j))
+                        if (l.id <= k) {
+                            hC_.primeid_digit_from[digitGPUid.at(i).at(j)][num] = l.id;
+                            //  hC_.primeid_flattened[DECOMP(GPUdigits.at(i).at(j), num)] = l.id;
+                            hC_.pos_in_digit[digitGPUid.at(i).at(j)][l.id] = num;
+
+                            num++;
+                        }
+                    hC_.num_primeid_digit_from[digitGPUid.at(i).at(j)][k] = num;
                 }
 
-                for (size_t j = 0; j < digitGPUid[i].size(); ++j) {
-                    for (int k = 0; k < hC_.L; ++k) {
-                        {
-                            int num = 0;
-                            for (auto& l : DECOMPmeta.at(i).at(j))
-                                if (l.id <= k) {
-                                    hC_.primeid_digit_from[digitGPUid.at(i).at(j)][num] = l.id;
-                                  //  hC_.primeid_flattened[DECOMP(digitGPUid.at(i).at(j), num)] = l.id;
-                                    num++;
-                                }
-                            hC_.num_primeid_digit_from[digitGPUid.at(i).at(j)][k] = num;
+                {
+                    int num = 0;
+                    for (auto& l : DIGITmeta.at(i).at(j))
+                        if (l.id <= k || l.id >= hC_.L) {
+                            hC_.primeid_digit_to[digitGPUid.at(i).at(j)][num] = l.id;
+                            //   hC_.primeid_flattened[DIGIT(GPUdigits.at(i).at(j), num)] = l.id;
+                            hC_.pos_in_digit[digitGPUid.at(i).at(j)][l.id] = num;
+                            num++;
                         }
-
-                        {
-                            int num = 0;
-                            for (auto& l : DIGITmeta.at(i).at(j))
-                                if (l.id <= k || l.id >= hC_.L) {
-                                    hC_.primeid_digit_to[digitGPUid.at(i).at(j)][num] = l.id;
-                                 //   hC_.primeid_flattened[DIGIT(digitGPUid.at(i).at(j), num)] = l.id;
-                                    num++;
-                                }
-                            hC_.num_primeid_digit_to[digitGPUid.at(i).at(j)][k] = num;
-                        }
-                    }
+                    hC_.num_primeid_digit_to[digitGPUid.at(i).at(j)][k] = num;
                 }
             }
-
-
-
+        }
+    }
+    */
 
     if constexpr (std::is_same_v<Scheme, CKKS::Parameters>) {
         auto param = static_cast<CKKS::Parameters>(parameters);
@@ -492,8 +496,6 @@ CudaCheckErrorMod;
                     hC_.P_shoup[i] = shoup_precomp(hC_.P[i], i);
                 }
             }
-
-            
 
             {
                 auto& src = param.raw->PHatInvModp;
@@ -565,7 +567,9 @@ CudaCheckErrorMod;
                 auto& src = param.raw->PartQlHatModp;
 
                 for (size_t k = 0; k < src.size(); ++k) {
+                    int input_primeid = 0;
                     for (size_t i = 0; i < src[k].size(); ++i) {
+                        /*
                         size_t gpu = 0;
                         size_t gpu_d = 0;
                         for (; gpu < digitGPUid.size(); ++gpu) {
@@ -577,17 +581,26 @@ CudaCheckErrorMod;
                             }
                         }
                     out:
+                         */
+
                         for (size_t j = 0; j < src[k][i].size(); ++j) {
                             for (size_t l = 0; l < src[k][i][j].size(); ++l) {
                                 assert(src[k][i][j][l] != 0);
-                                int DIGITmeta_primeid =
-                                    l >= src[k][i][j].size() - hC_.K
-                                        ? DIGITmeta.at(gpu).at(gpu_d).at(l - src[k][i][j].size() + hC_.K).id
-                                        : DIGITmeta.at(gpu).at(gpu_d).at(l + hC_.K).id;
-                                hG_.DecompAndModUp_matrix[k][i][j][DIGITmeta_primeid] = src[k][i][j][l];
-                                hG_.DecompAndModUp_matrix_shoup[k][i][j][DIGITmeta_primeid] =
-                                    shoup_precomp(src[k][i][j][l], DIGITmeta_primeid);
+                                int added_decomp =
+                                    DECOMPmeta.at(0).at(i).at(0).id <= l ? DECOMPmeta.at(0).at(i).size() : 0;
+                                int predicted_primeid = l >= src[k][i][j].size() - hC_.K
+                                                            ? hC_.L + l - src[k][i][j].size() + hC_.K
+                                                            : l + added_decomp;  // TODO: add possible decomp offset
+                                //  int DIGITmeta_primeid =
+                                //      l >= src[k][i][j].size() - hC_.K
+                                //          ? DIGITmeta.at(gpu).at(gpu_d).at(l - src[k][i][j].size() + hC_.K).id
+                                //         : DIGITmeta.at(gpu).at(gpu_d).at(l + hC_.K).id;
+
+                                hG_.DecompAndModUp_matrix[k][i][input_primeid][predicted_primeid] = src[k][i][j][l];
+                                hG_.DecompAndModUp_matrix_shoup[k][i][input_primeid][predicted_primeid] =
+                                    shoup_precomp(src[k][i][j][l], predicted_primeid);
                             }
+                            input_primeid++;
                         }
                     }
                 }
@@ -612,11 +625,63 @@ CudaCheckErrorMod;
     }
 
     CudaCheckErrorMod;
+    for (size_t i = 0; i < GPUid.size(); ++i) {
+        for (size_t j = 0; j < meta[i].size(); ++j) {
+            hC_.primeid_partition[i][j] = meta[i][j].id;
+            hC_.primeid_digit[meta[i][j].id] = meta[i][j].digit;
+            // hC_.primeid_flattened[PARTITION(i, j)] = meta[i][j].id;
+        }
+
+        for (size_t j = 0; j < smeta.size(); ++j) {
+            //hC_.primeid_partition[i][j] = smeta[j].id;
+            hC_.primeid_digit[smeta[j].id] = smeta[j].digit;
+            // hC_.primeid_flattened[PARTITION(i, j)] = meta[i][j].id;
+        }
+    }
+
+    for (size_t i = 0; i < GPUid.size(); ++i) {
+        for (size_t j = 0; j < digitGPUid[i].size(); ++j) {
+            for (int k = 0; k < hC_.L; ++k) {
+                {
+                    int num = 0;
+                    for (auto& l : DECOMPmeta.at(i).at(j))
+                        if (l.id <= k) {
+                            hC_.primeid_digit_from[digitGPUid.at(i).at(j)][num] = l.id;
+                            //  hC_.primeid_flattened[DECOMP(GPUdigits.at(i).at(j), num)] = l.id;
+                            hC_.pos_in_digit[digitGPUid.at(i).at(j)][l.id] = num;
+
+                            num++;
+                        }
+                    hC_.num_primeid_digit_from[digitGPUid.at(i).at(j)][k] = num;
+                }
+
+                {
+                    int num = 0;
+                    for (auto& l : DIGITmeta.at(i).at(j))
+                        if (l.id <= k || l.id >= hC_.L) {
+                            hC_.primeid_digit_to[digitGPUid.at(i).at(j)][num] = l.id;
+                            //   hC_.primeid_flattened[DIGIT(GPUdigits.at(i).at(j), num)] = l.id;
+                            hC_.pos_in_digit[digitGPUid.at(i).at(j)][l.id] = num;
+                            num++;
+                        }
+                    hC_.num_primeid_digit_to[digitGPUid.at(i).at(j)][k] = num;
+                }
+            }
+        }
+
+        cudaSetDevice(GPUid[i]);
+        cudaMemcpyToSymbol(constants, &host_constants, sizeof(Constants), 0, cudaMemcpyHostToDevice);
+        CudaCheckErrorMod;
+        host_constants_per_gpu[i] = host_constants;
+    }
+    /*
+    CudaCheckErrorMod;
     for (int id : GPUid) {
         cudaSetDevice(id);
         cudaMemcpyToSymbol(constants, &host_constants, sizeof(Constants), 0, cudaMemcpyHostToDevice);
         CudaCheckErrorMod;
     }
+    */
 }
 
 template void SetupConstants<CKKS::Parameters>(const std::vector<PrimeRecord>& q,

@@ -1,20 +1,21 @@
 //
 // Created by carlosad on 4/04/24.
 //
+
 #include "AddSub.cuh"
 #include "CKKS/Rescale.cuh"
 #include "ConstantsGPU.cuh"
 #include "ModMult.cuh"
 #include "NTT.cuh"
 
-#include <cooperative_groups.h>
+//#include <cooperative_groups.h>
 #include <cassert>
 #include <iostream>
 
 #include "NTTfusions.cuh"
 #include "NTThelper.cuh"
 
-namespace cg = cooperative_groups;
+//namespace cg = cooperative_groups;
 
 namespace FIDESlib {
 
@@ -692,7 +693,7 @@ __global__ void NTT_1D(T* dat, const T* psi_dat, const int __grid_constant__ N, 
     int m = N / 2;
     uint32_t log_psi_ext = logN - 1;
     int maskPsi = m;
-    printf("m: %d\n", m);
+    //printf("m: %d\n", m);
     /*
         for(;m > blockDim.x; m >>= 1, maskPsi = (maskPsi << 1) | 1){
             __syncthreads();
@@ -717,7 +718,8 @@ __global__ void NTT_1D(T* dat, const T* psi_dat, const int __grid_constant__ N, 
         __syncthreads();
         aux[threadIdx.x] = dat[2 * tile + threadIdx.x];
         aux[threadIdx.x + m] = dat[2 * tile + threadIdx.x + m];
-        printf("hola\n");
+        //printf("hola\n");
+        // todo una mascara para calcular j1 y otra para calcular la psi
         for (; m >= 1; m >>= 1, maskPsi2 = (maskPsi2 >> 1) | maskPsi2, --log_psi) {
             //if (m >= WARP_SIZE)
             __syncthreads();
@@ -733,12 +735,12 @@ __global__ void NTT_1D(T* dat, const T* psi_dat, const int __grid_constant__ N, 
             T& aux2 = aux[j2];
 
             // printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d\n", m, j1, j2, (int) psiaux, (tid + tile) & maskPsi2);
-            printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
-                   (int)aux1, (int)aux2);
+            // printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
+            //       (int)aux1, (int)aux2);
             CT_butterfly<T, ALGO_NATIVE>(aux1, aux2, psiaux, primeid);
 
-            printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
-                   (int)aux1, (int)aux2);
+            //printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
+            //       (int)aux1, (int)aux2);
         }
         __syncthreads();
         if constexpr (sizeof(T) == 8) {
@@ -763,7 +765,7 @@ __global__ void INTT_1D(T* dat, const T* psi_dat, const int __grid_constant__ N,
 
     uint32_t log_psi_ext = 0;
     int m = 1, maskPsi = blockDim.x - 1;
-    printf("m: %d\n", m);
+    //printf("m: %d\n", m);
 
     for (int tile = 0; tile < N / 2; tile += blockDim.x) {
         int m = 1;
@@ -772,7 +774,8 @@ __global__ void INTT_1D(T* dat, const T* psi_dat, const int __grid_constant__ N,
         __syncthreads();
         aux[threadIdx.x] = dat[2 * tile + threadIdx.x];
         aux[threadIdx.x + blockDim.x] = dat[2 * tile + threadIdx.x + blockDim.x];
-        printf("hola\n");
+        //printf("hola\n");
+        // todo una mascara para calcular j1 y otra para calcular la psi
         for (; m <= blockDim.x; m <<= 1, maskPsi2 = (maskPsi2 << 1) & maskPsi2, ++log_psi) {
 
             //if (m >= WARP_SIZE)
@@ -789,12 +792,12 @@ __global__ void INTT_1D(T* dat, const T* psi_dat, const int __grid_constant__ N,
             T& aux2 = aux[j2];
 
             // printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d\n", m, j1, j2, (int) psiaux, (tid + tile) & maskPsi2);
-            printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
-                   (int)aux1, (int)aux2);
+            //  printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
+            //       (int)aux1, (int)aux2);
             GS_butterfly<T, ALGO_NATIVE>(aux1, aux2, psiaux, primeid);
 
-            printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
-                   (int)aux1, (int)aux2);
+            //  printf("m: %d, j1: %d, j2: %d, psi: %d, psi_id: %d, a1: %d, a2: %d\n", m, j1, j2, (int)psiaux, psiid,
+            //       (int)aux1, (int)aux2);
         }
         __syncthreads();
         if constexpr (sizeof(T) == 8) {

@@ -1,355 +1,390 @@
-#include "train.cuh"
-#include "helper.hpp"
-#include "fhe.hpp"
 #include "crypt.hpp"
-#include "fides.cuh"
 #include "data.hpp"
 #include "encoding.hpp"
+#include "fhe.hpp"
+#include "fides.cuh"
+#include "helper.hpp"
 #include "naive.hpp"
+#include "train.cuh"
 
-#include <vector>
 #include <iostream>
+#include <vector>
 
 #include <FIDESlib/CKKS/Context.cuh>
 
-std::vector<iteration_time_t> cpu_training(const std::vector<std::vector<double> > &data, const std::vector<double> &results, std::vector<double> &weights, const size_t training_iterations, const bool use_accelerated_training) {
+lbcrypto::KeyPair<lbcrypto::DCRTPoly> keys;
 
-    /// --------- Data adaptation to FHE packing. ---------
+std::vector<iteration_time_t> cpu_training(const std::vector<std::vector<double>> &data,
+										   const std::vector<double> &results, std::vector<double> &weights,
+										   const size_t training_iterations, const bool use_accelerated_training) {
 
-    std::vector<std::vector<double> > training_data_fhe;
-    std::vector<std::vector<double> > training_results_fhe;
-    std::vector<double> weights_fhe;
+	/// --------- Data adaptation to FHE packing. ---------
 
-    std::cout << "Packing training data CPU..." << std::endl;
+	std::vector<std::vector<double>> training_data_fhe;
+	std::vector<std::vector<double>> training_results_fhe;
+	std::vector<double> weights_fhe;
 
-    const auto fhe_adapt_info = pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
+	std::cout << "Packing training data CPU..." << std::endl;
 
-    const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
-    const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
-    const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
+	const auto fhe_adapt_info =
+			pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
 
-    /// --------- Create the CPU context. ---------
+	const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
+	const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
+	const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
 
-    create_cpu_context(use_accelerated_training, false);
+	/// --------- Create the CPU context. ---------
 
-    const auto keys = cc_cpu->KeyGen();
+	create_cpu_context(use_accelerated_training, false);
 
-    prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
+	keys = cc_cpu->KeyGen();
 
-    /// --------- Encrypt the training data. ---------
-    auto enc_weights = encrypt_data(weights_fhe, keys.publicKey);
+	prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
 
-    /// --------- Training. ---------
 
-    std::vector<iteration_time_t> times;
-    if (use_accelerated_training) {
-        times = logistic_regression_cpu_train_accelerated(training_data_fhe, training_results_fhe, enc_weights, ciphertext_matrix_rows,
-                                        ciphertext_matrix_columns, last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
-    }
-    else {
-        times = logistic_regression_cpu_train(training_data_fhe, training_results_fhe, enc_weights, ciphertext_matrix_rows,
-                                        ciphertext_matrix_columns, last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
-    }
+	/// --------- Encrypt the training data. ---------
+	weights_fhe.resize(ciphertext_matrix_columns);
+	auto enc_weights = encrypt_data(weights_fhe, keys.publicKey, 1, cc_cpu->GetElementParams()->GetParams().size() - 2);
 
-    /// --------- Decrypt, unpack and save the weights. ---------
+	/// --------- Training. ---------
 
-    const auto dec_weights = decrypt_data(enc_weights, keys.secretKey);
-    std::vector<double> new_weights;
-    unpack_weights(dec_weights, new_weights, weights.size());
+	std::vector<iteration_time_t> times;
+	if (use_accelerated_training) {
+		times = logistic_regression_cpu_train_accelerated(
+				training_data_fhe, training_results_fhe, enc_weights, ciphertext_matrix_rows, ciphertext_matrix_columns,
+				last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
+	} else {
+		times = logistic_regression_cpu_train(training_data_fhe, training_results_fhe, enc_weights,
+											  ciphertext_matrix_rows, ciphertext_matrix_columns,
+											  last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
+	}
 
-    weights = new_weights;
+	/// --------- Decrypt, unpack and save the weights. ---------
 
-    return times;
+	const auto dec_weights = decrypt_data(enc_weights, keys.secretKey);
+	std::vector<double> new_weights;
+	unpack_weights(dec_weights, new_weights, weights.size());
+
+	weights = new_weights;
+
+	return times;
 }
 
-std::pair<std::vector<iteration_time_t>, double> cpu_inference(const std::vector<std::vector<double> > &data, const std::vector<double> &results, const std::vector<double> &weights) {
-    /// --------- Data adaptation to FHE packing. ---------
+std::pair<std::vector<iteration_time_t>, double> cpu_inference(const std::vector<std::vector<double>> &data,
+															   const std::vector<double> &results,
+															   const std::vector<double> &weights) {
+	/// --------- Data adaptation to FHE packing. ---------
 
-    std::vector<std::vector<double> > training_data_fhe;
-    std::vector<std::vector<double> > training_results_fhe;
-    std::vector<double> weights_fhe;
+	std::vector<std::vector<double>> training_data_fhe;
+	std::vector<std::vector<double>> training_results_fhe;
+	std::vector<double> weights_fhe;
 
-    std::cout << "Packing validation data CPU..." << std::endl;
+	std::cout << "Packing validation data CPU..." << std::endl;
 
-    const auto fhe_adapt_info = pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
+	const auto fhe_adapt_info =
+			pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
 
-    const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
-    const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
-    const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
+	const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
+	const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
+	const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
 
-    /// --------- Create the CPU context. ---------
+	/// --------- Create the CPU context. ---------
 
-    create_cpu_context(false, true);
+	create_cpu_context(false, true);
 
-    const auto keys = cc_cpu->KeyGen();
+	keys = cc_cpu->KeyGen();
 
-    prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
+	prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
 
-    /// --------- Encrypt the weights. ---------
+	/// --------- Encrypt the weights. ---------
 
-    const auto enc_weights = encrypt_data(weights_fhe, keys.publicKey);
+	const auto enc_weights = encrypt_data(weights_fhe, keys.publicKey, 1, 0);
 
-    /// --------- Inference. ---------
+	/// --------- Inference. ---------
 
-    auto times = logistic_regression_cpu_inference(training_data_fhe, enc_weights, ciphertext_matrix_rows, ciphertext_matrix_columns, last_ciphertext_matrix_rows, keys);
+	auto times = logistic_regression_cpu_inference(training_data_fhe, enc_weights, ciphertext_matrix_rows,
+												   ciphertext_matrix_columns, last_ciphertext_matrix_rows, keys);
 
-    /// --------- Decrypt the data ---------
+	/// --------- Decrypt the data ---------
 
-    std::vector<std::vector<double>> unpacked_data;
-    unpack_data(training_data_fhe, unpacked_data, ciphertext_matrix_rows, ciphertext_matrix_columns, last_ciphertext_matrix_rows, weights.size());
+	std::vector<std::vector<double>> unpacked_data;
+	unpack_data(training_data_fhe, unpacked_data, ciphertext_matrix_rows, ciphertext_matrix_columns,
+				last_ciphertext_matrix_rows, weights.size());
 
-    size_t tp = 0.0, tn = 0.0, fp = 0.0, fn = 0.0;
-    size_t correct = 0.0;
+	size_t tp = 0.0, tn = 0.0, fp = 0.0, fn = 0.0;
+	size_t correct = 0.0;
 
-    for (size_t i = 0; i < unpacked_data.size(); i++) {
-        if (unpacked_data[i][0] < 0.5 && results[i] == 0.0) {
-            tn += 1;
-            correct += 1;
-        }
-        else if (unpacked_data[i][0] < 0.5&& results[i] == 1.0) {
-            fn += 1;
-        }
-        else if (unpacked_data[i][0] >= 0.5 && results[i] == 0.0) {
-            fp += 1;
-        }
-        if (unpacked_data[i][0] >= 0.5 && results[i] == 1.0) {
-            tp += 1;
-            correct += 1;
-        }
-    }
+	for (size_t i = 0; i < unpacked_data.size(); i++) {
+		if (unpacked_data[i][0] < 0.5 && results[i] == 0.0) {
+			tn += 1;
+			correct += 1;
+		} else if (unpacked_data[i][0] < 0.5 && results[i] == 1.0) {
+			fn += 1;
+		} else if (unpacked_data[i][0] >= 0.5 && results[i] == 0.0) {
+			fp += 1;
+		}
+		if (unpacked_data[i][0] >= 0.5 && results[i] == 1.0) {
+			tp += 1;
+			correct += 1;
+		}
+	}
 
-    const double acc = (static_cast<double>(correct) / static_cast<double>(unpacked_data.size())) * 100;
+	const double acc = (static_cast<double>(correct) / static_cast<double>(unpacked_data.size())) * 100;
 
-    std::cout << "True positives: " << tp << ", False positives: " << fp << ", True negatives: " << tn << ", False negatives: " << fn << std::endl;
-    std::cout << "Correct: " << correct << " from " << unpacked_data.size() << " results. Percentage: "  << acc << "%."<< std::endl;
+	std::cout << "True positives: " << tp << ", False positives: " << fp << ", True negatives: " << tn
+			  << ", False negatives: " << fn << std::endl;
+	std::cout << "Correct: " << correct << " from " << unpacked_data.size() << " results. Percentage: " << acc << "%."
+			  << std::endl;
 
-    return std::make_pair(times, acc);
+	return std::make_pair(times, acc);
 }
 
-std::vector<iteration_time_t> naive_training(const std::vector<std::vector<double> > &data, const std::vector<double> &results, std::vector<double> &weights, size_t training_iterations , const bool use_accelerated_training) {
+std::vector<iteration_time_t> naive_training(const std::vector<std::vector<double>> &data,
+											 const std::vector<double> &results, std::vector<double> &weights,
+											 size_t training_iterations, const bool use_accelerated_training) {
 
-    /// --------- Data adaptation to FHE packing. ---------
+	/// --------- Data adaptation to FHE packing. ---------
 
-    std::vector<std::vector<double> > training_data_fhe;
-    std::vector<std::vector<double> > training_results_fhe;
-    std::vector<double> weights_fhe;
+	std::vector<std::vector<double>> training_data_fhe;
+	std::vector<std::vector<double>> training_results_fhe;
+	std::vector<double> weights_fhe;
 
-    std::cout << "Packing training data Naive..." << std::endl;
+	std::cout << "Packing training data Naive..." << std::endl;
 
-    const auto fhe_adapt_info = pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
+	const auto fhe_adapt_info =
+			pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
 
-    const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
-    const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
-    const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
+	const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
+	const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
+	const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
 
-    /// --------- Training. ---------
+	/// --------- Training. ---------
 
-    std::vector<iteration_time_t> times;
-    if (use_accelerated_training) {
-        times = logistic_regression_naive_train_accelerated(training_data_fhe, training_results_fhe, weights_fhe, ciphertext_matrix_rows,
-                                        ciphertext_matrix_columns, last_ciphertext_matrix_rows, training_iterations);
-    }
-    else {
-        times = logistic_regression_naive_train(training_data_fhe, training_results_fhe, weights_fhe, ciphertext_matrix_rows,
-                                        ciphertext_matrix_columns, last_ciphertext_matrix_rows, training_iterations);
-    }
+	std::vector<iteration_time_t> times;
+	if (use_accelerated_training) {
+		times = logistic_regression_naive_train_accelerated(training_data_fhe, training_results_fhe, weights_fhe,
+															ciphertext_matrix_rows, ciphertext_matrix_columns,
+															last_ciphertext_matrix_rows, training_iterations);
+	} else {
+		times = logistic_regression_naive_train(training_data_fhe, training_results_fhe, weights_fhe,
+												ciphertext_matrix_rows, ciphertext_matrix_columns,
+												last_ciphertext_matrix_rows, training_iterations);
+	}
 
-    /// --------- Decrypt, unpack and save the weights. ---------
+	/// --------- Decrypt, unpack and save the weights. ---------
 
-    std::vector<double> new_weights;
-    unpack_weights(weights_fhe, new_weights, weights.size());
-    weights = new_weights;
+	std::vector<double> new_weights;
+	unpack_weights(weights_fhe, new_weights, weights.size());
+	weights = new_weights;
 
-    return times;
+	return times;
 }
 
 
-std::pair<std::vector<iteration_time_t>, double> naive_inference(const std::vector<std::vector<double> > &data, const std::vector<double> &results, const std::vector<double> &weights) {
+std::pair<std::vector<iteration_time_t>, double> naive_inference(const std::vector<std::vector<double>> &data,
+																 const std::vector<double> &results,
+																 const std::vector<double> &weights) {
 
-    /// --------- Data adaptation to FHE packing. ---------
+	/// --------- Data adaptation to FHE packing. ---------
 
-    std::vector<std::vector<double> > training_data_fhe;
-    std::vector<std::vector<double> > training_results_fhe;
-    std::vector<double> weights_fhe;
+	std::vector<std::vector<double>> training_data_fhe;
+	std::vector<std::vector<double>> training_results_fhe;
+	std::vector<double> weights_fhe;
 
-    std::cout << "Packing validation data Naive..." << std::endl;
+	std::cout << "Packing validation data Naive..." << std::endl;
 
-    const auto fhe_adapt_info = pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
+	const auto fhe_adapt_info =
+			pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
 
-    const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
-    const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
-    const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
+	const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
+	const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
+	const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
 
-    /// --------- Training. ---------
+	/// --------- Training. ---------
 
-    auto times = logistic_regression_naive_inference(training_data_fhe, weights_fhe, ciphertext_matrix_rows,
-                                    ciphertext_matrix_columns, last_ciphertext_matrix_rows);
+	auto times = logistic_regression_naive_inference(training_data_fhe, weights_fhe, ciphertext_matrix_rows,
+													 ciphertext_matrix_columns, last_ciphertext_matrix_rows);
 
-    /// --------- Decrypt the data ---------
+	/// --------- Decrypt the data ---------
 
-    std::vector<std::vector<double>> unpacked_data;
-    unpack_data(training_data_fhe, unpacked_data, ciphertext_matrix_rows, ciphertext_matrix_columns, last_ciphertext_matrix_rows, weights.size());
+	std::vector<std::vector<double>> unpacked_data;
+	unpack_data(training_data_fhe, unpacked_data, ciphertext_matrix_rows, ciphertext_matrix_columns,
+				last_ciphertext_matrix_rows, weights.size());
 
-    size_t tp = 0.0, tn = 0.0, fp = 0.0, fn = 0.0;
-    size_t correct = 0.0;
+	size_t tp = 0.0, tn = 0.0, fp = 0.0, fn = 0.0;
+	size_t correct = 0.0;
 
-    for (size_t i = 0; i < unpacked_data.size(); i++) {
-        if (unpacked_data[i][0] < 0.5 && results[i] == 0.0) {
-            tn += 1;
-            correct += 1;
-        }
-        else if (unpacked_data[i][0] < 0.5&& results[i] == 1.0) {
-            fn += 1;
-        }
-        else if (unpacked_data[i][0] >= 0.5 && results[i] == 0.0) {
-            fp += 1;
-        }
-        if (unpacked_data[i][0] >= 0.5 && results[i] == 1.0) {
-            tp += 1;
-            correct += 1;
-        }
-    }
+	for (size_t i = 0; i < unpacked_data.size(); i++) {
+		if (unpacked_data[i][0] < 0.5 && results[i] == 0.0) {
+			tn += 1;
+			correct += 1;
+		} else if (unpacked_data[i][0] < 0.5 && results[i] == 1.0) {
+			fn += 1;
+		} else if (unpacked_data[i][0] >= 0.5 && results[i] == 0.0) {
+			fp += 1;
+		}
+		if (unpacked_data[i][0] >= 0.5 && results[i] == 1.0) {
+			tp += 1;
+			correct += 1;
+		}
+	}
 
-    const double acc = (static_cast<double>(correct) / static_cast<double>(unpacked_data.size())) * 100;
-    std::cout << acc << std::endl;
+	const double acc = (static_cast<double>(correct) / static_cast<double>(unpacked_data.size())) * 100;
+	std::cout << acc << std::endl;
 
-    std::cout << "True positives: " << tp << ", False positives: " << fp << ", True negatives: " << tn << ", False negatives: " << fn << std::endl;
-    std::cout << "Correct: " << correct << " from " << unpacked_data.size() << " results. Percentage: "  << acc << "%."<< std::endl;
+	std::cout << "True positives: " << tp << ", False positives: " << fp << ", True negatives: " << tn
+			  << ", False negatives: " << fn << std::endl;
+	std::cout << "Correct: " << correct << " from " << unpacked_data.size() << " results. Percentage: " << acc << "%."
+			  << std::endl;
 
-    return std::make_pair(times, acc);
+	return std::make_pair(times, acc);
 }
 
-std::vector<iteration_time_t> gpu_training(const std::vector<std::vector<double> > &data, const std::vector<double> &results, std::vector<double> &weights, size_t training_iterations, const bool use_accelerated_training) {
+std::vector<iteration_time_t> gpu_training(const std::vector<std::vector<double>> &data,
+										   const std::vector<double> &results, std::vector<double> &weights,
+										   size_t training_iterations, const bool use_accelerated_training) {
 
-    /// --------- Data adaptation to FHE packing. ---------
+	/// --------- Data adaptation to FHE packing. ---------
 
-    std::vector<std::vector<double> > training_data_fhe;
-    std::vector<std::vector<double> > training_results_fhe;
-    std::vector<double> weights_fhe;
+	std::vector<std::vector<double>> training_data_fhe;
+	std::vector<std::vector<double>> training_results_fhe;
+	std::vector<double> weights_fhe;
 
-    std::cout << "Packing training data GPU..." << std::endl;
+	std::cout << "Packing training data GPU..." << std::endl;
 
-    const auto fhe_adapt_info = pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
+	const auto fhe_adapt_info =
+			pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
 
-    const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
-    const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
-    const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
+	const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
+	const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
+	const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
 
-    /// --------- Create the CPU and GPU context. ---------
+	/// --------- Create the CPU and GPU context. ---------
 
-    create_cpu_context(use_accelerated_training, false);
+	create_cpu_context(use_accelerated_training, false);
 
-    const auto keys = cc_cpu->KeyGen();
+	keys = cc_cpu->KeyGen();
 
-    prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
+	prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
 
-    std::cout << "Generating GPU context..." << std::endl;
+	std::cout << "Generating GPU context..." << std::endl;
 
-    auto raw_params = FIDESlib::CKKS::GetRawParams(cc_cpu);
-    auto adapted_params = params.adaptTo(raw_params);
-    FIDESlib::CKKS::Context cc_gpu(adapted_params, {0});
+	auto raw_params = FIDESlib::CKKS::GetRawParams(cc_cpu);
+	auto adapted_params = params.adaptTo(raw_params);
 
-    prepare_gpu_context(cc_gpu, keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
+	FIDESlib::CKKS::Context cc_gpu(adapted_params, std::vector<int>(devices.begin(), devices.end()));
 
-    /// --------- Encrypt the training data and load to GPU. ---------
+	prepare_gpu_context(cc_gpu, keys, ciphertext_matrix_columns, ciphertext_matrix_rows, true);
 
-    auto enc_weights = encrypt_data(weights_fhe, keys.publicKey);
+	/// --------- Encrypt the training data and load to GPU. ---------
 
-    auto enc_weights_gpu = move_ciphertext(cc_gpu, enc_weights);
+	weights_fhe.resize(ciphertext_matrix_columns);
+	auto enc_weights = encrypt_data(weights_fhe, keys.publicKey, 1, cc_gpu.L - 1);
 
-    /// --------- Training. ---------
+	auto enc_weights_gpu = move_ciphertext(cc_gpu, enc_weights);
 
-    std::vector<iteration_time_t> times;
-    if (use_accelerated_training) {
-        times = logistic_regression_gpu_train_accelerated(training_data_fhe, training_results_fhe, enc_weights_gpu, ciphertext_matrix_rows,
-                                        ciphertext_matrix_columns, last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
-    }
-    else {
-        times = logistic_regression_gpu_train(training_data_fhe, training_results_fhe, enc_weights_gpu, ciphertext_matrix_rows,
-                                        ciphertext_matrix_columns, last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
-    }
-    /// --------- Unload GPU, decrypt, unpack and save the weights. ---------
+	/// --------- Training. ---------
 
-    move_back(cc_gpu, enc_weights, enc_weights_gpu);
+	std::vector<iteration_time_t> times;
+	if (use_accelerated_training) {
+		times = logistic_regression_gpu_train_accelerated(
+				training_data_fhe, training_results_fhe, enc_weights_gpu, ciphertext_matrix_rows,
+				ciphertext_matrix_columns, last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
+	} else {
+		times = logistic_regression_gpu_train(training_data_fhe, training_results_fhe, enc_weights_gpu,
+											  ciphertext_matrix_rows, ciphertext_matrix_columns,
+											  last_ciphertext_matrix_rows, training_iterations, keys.publicKey);
+	}
 
-    std::vector<double> dec_weights;
+	/// --------- Unload GPU, decrypt, unpack and save the weights. ---------
 
-    dec_weights = decrypt_data(enc_weights, keys.secretKey);
-    std::vector<double> new_weights;
-    unpack_weights(dec_weights, new_weights, weights.size());
-    weights = new_weights;
-    
-    return times;
+	enc_weights_gpu.dropToLevel(1);
+	move_back(cc_gpu, enc_weights, enc_weights_gpu);
+
+	enc_weights->SetSlots(ciphertext_matrix_columns);
+	std::vector<double> dec_weights;
+
+	dec_weights = decrypt_data(enc_weights, keys.secretKey);
+	std::vector<double> new_weights;
+	unpack_weights(dec_weights, new_weights, weights.size());
+	weights = new_weights;
+
+	return times;
 }
 
-std::pair<std::vector<iteration_time_t>, double> gpu_inference(const std::vector<std::vector<double> > &data, const std::vector<double> &results, const std::vector<double> &weights) {
-    /// --------- Data adaptation to FHE packing. ---------
+std::pair<std::vector<iteration_time_t>, double> gpu_inference(const std::vector<std::vector<double>> &data,
+															   const std::vector<double> &results,
+															   const std::vector<double> &weights) {
+	/// --------- Data adaptation to FHE packing. ---------
 
-    std::vector<std::vector<double> > training_data_fhe;
-    std::vector<std::vector<double> > training_results_fhe;
-    std::vector<double> weights_fhe;
+	std::vector<std::vector<double>> training_data_fhe;
+	std::vector<std::vector<double>> training_results_fhe;
+	std::vector<double> weights_fhe;
 
-    std::cout << "Packing validation data GPU..." << std::endl;
+	std::cout << "Packing validation data GPU..." << std::endl;
 
-    const auto fhe_adapt_info = pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
+	const auto fhe_adapt_info =
+			pack_data_fhe(data, results, weights, training_data_fhe, training_results_fhe, weights_fhe, num_slots);
 
-    const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
-    const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
-    const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
+	const size_t ciphertext_matrix_columns = std::get<0>(fhe_adapt_info);
+	const size_t ciphertext_matrix_rows = std::get<1>(fhe_adapt_info);
+	const size_t last_ciphertext_matrix_rows = std::get<2>(fhe_adapt_info);
 
-    /// --------- Create the CPU context. ---------
+	/// --------- Create the CPU context. ---------
 
-    create_cpu_context(false, true);
+	create_cpu_context(false, true);
 
-    const auto keys = cc_cpu->KeyGen();
+	keys = cc_cpu->KeyGen();
 
-    prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
+	prepare_cpu_context(keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
 
-    auto raw_params = FIDESlib::CKKS::GetRawParams(cc_cpu);
-    auto adapted_params = params.adaptTo(raw_params);
-    FIDESlib::CKKS::Context cc_gpu(adapted_params, {0});
+	auto raw_params = FIDESlib::CKKS::GetRawParams(cc_cpu);
+	auto adapted_params = params.adaptTo(raw_params);
+	FIDESlib::CKKS::Context cc_gpu(adapted_params, std::vector<int>(devices.begin(), devices.end()));
 
-    prepare_gpu_context(cc_gpu, keys, ciphertext_matrix_columns, ciphertext_matrix_rows);
+	prepare_gpu_context(cc_gpu, keys, ciphertext_matrix_columns, ciphertext_matrix_rows, false);
 
-    /// --------- Encrypt the weights. ---------
+	/// --------- Encrypt the weights. ---------
 
-    const auto enc_weights = encrypt_data(weights_fhe, keys.publicKey);
-    auto enc_weights_gpu = move_ciphertext(cc_gpu, enc_weights);
+	const auto enc_weights = encrypt_data(weights_fhe, keys.publicKey, 1, 0);
+	auto enc_weights_gpu = move_ciphertext(cc_gpu, enc_weights);
 
-    /// --------- Inference. ---------
+	/// --------- Inference. ---------
 
-    auto times = logistic_regression_gpu_inference(training_data_fhe, enc_weights_gpu, ciphertext_matrix_rows, ciphertext_matrix_columns, last_ciphertext_matrix_rows, keys);
+	auto times = logistic_regression_gpu_inference(training_data_fhe, enc_weights_gpu, ciphertext_matrix_rows,
+												   ciphertext_matrix_columns, last_ciphertext_matrix_rows, keys);
 
-    /// --------- Decrypt the data ---------
+	/// --------- Decrypt the data ---------
 
-    std::vector<std::vector<double>> unpacked_data;
-    unpack_data(training_data_fhe, unpacked_data, ciphertext_matrix_rows, ciphertext_matrix_columns, last_ciphertext_matrix_rows, weights.size());
+	std::vector<std::vector<double>> unpacked_data;
+	unpack_data(training_data_fhe, unpacked_data, ciphertext_matrix_rows, ciphertext_matrix_columns,
+				last_ciphertext_matrix_rows, weights.size());
 
 
-    size_t tp = 0.0, tn = 0.0, fp = 0.0, fn = 0.0;
-    size_t correct = 0.0;
+	size_t tp = 0.0, tn = 0.0, fp = 0.0, fn = 0.0;
+	size_t correct = 0.0;
 
-    for (size_t i = 0; i < unpacked_data.size(); i++) {
-        if (unpacked_data[i][0] < 0.5 && results[i] == 0.0) {
-            tn += 1;
-            correct += 1;
-        }
-        else if (unpacked_data[i][0] < 0.5&& results[i] == 1.0) {
-            fn += 1;
-        }
-        else if (unpacked_data[i][0] >= 0.5 && results[i] == 0.0) {
-            fp += 1;
-        }
-        if (unpacked_data[i][0] >= 0.5 && results[i] == 1.0) {
-            tp += 1;
-            correct += 1;
-        }
-    }
+	for (size_t i = 0; i < unpacked_data.size(); i++) {
+		if (unpacked_data[i][0] < 0.5 && results[i] == 0.0) {
+			tn += 1;
+			correct += 1;
+		} else if (unpacked_data[i][0] < 0.5 && results[i] == 1.0) {
+			fn += 1;
+		} else if (unpacked_data[i][0] >= 0.5 && results[i] == 0.0) {
+			fp += 1;
+		}
+		if (unpacked_data[i][0] >= 0.5 && results[i] == 1.0) {
+			tp += 1;
+			correct += 1;
+		}
+	}
 
-    const double acc = (static_cast<double>(correct) / static_cast<double>(unpacked_data.size())) * 100;
+	const double acc = (static_cast<double>(correct) / static_cast<double>(unpacked_data.size())) * 100;
 
-    std::cout << "True positives: " << tp << ", False positives: " << fp << ", True negatives: " << tn << ", False negatives: " << fn << std::endl;
-    std::cout << "Correct: " << correct << " from " << unpacked_data.size() << " results. Percentage: "  << acc  << "%."<< std::endl;
+	std::cout << "True positives: " << tp << ", False positives: " << fp << ", True negatives: " << tn
+			  << ", False negatives: " << fn << std::endl;
+	std::cout << "Correct: " << correct << " from " << unpacked_data.size() << " results. Percentage: " << acc << "%."
+			  << std::endl;
 
-    return std::make_pair(times, acc);
+	return std::make_pair(times, acc);
 }

@@ -14,6 +14,10 @@
 #include <cassert>
 #include <iostream>
 
+#ifdef NCCL
+#include "nccl.h"
+#endif
+
 namespace FIDESlib::CKKS {
 
 class RNSPoly;
@@ -33,7 +37,7 @@ class Context {
     const std::vector<int> GPUid;
     const int dnum;
 
-    std::vector<std::vector<int>> digitGPUid;
+    std::vector<std::vector<int>> GPUdigits;
     const std::vector<PrimeRecord> prime;
 
     std::vector<std::vector<LimbRecord>> meta;
@@ -42,21 +46,48 @@ class Context {
     const int K, logP;
     const std::vector<PrimeRecord> specialPrime;
 
-    std::vector<LimbRecord> specialMeta;                           // Make const maybe
+    std::vector<std::vector<LimbRecord>> specialMeta;  // Make const maybe
+    std::vector<std::vector<LimbRecord>> splitSpecialMeta;
     std::vector<std::vector<std::vector<LimbRecord>>> decompMeta;  // Make const maybe
     std::vector<std::vector<std::vector<LimbRecord>>> digitMeta;   // Make const maybe
+    std::vector<LimbRecord> gatherMeta;
 
     const std::vector<dim3> limbGPUid;
-    const std::vector<int> GPUrank;
+    const std::vector<int> digitGPUid;
 
+#ifdef NCCL
+    ncclUniqueId communicatorID;
+    std::vector<ncclComm_t> GPUrank;
+#else
+    std::vector<int> GPUrank;
+#endif
     std::unique_ptr<RNSPoly> key_switch_aux = nullptr;
     std::unique_ptr<RNSPoly> key_switch_aux2 = nullptr;
-    std::unique_ptr<RNSPoly> moddown_aux = nullptr;
+
+    std::array<std::unique_ptr<RNSPoly>, 2> moddown_aux = {nullptr};
+
+    std::vector<Stream> top_limb_stream;
+    std::vector<uint64_t*> top_limb_buffer;
+    std::vector<void*> top_limb_buffer_handle;
+    std::vector<VectorGPU<void*>> top_limbptr;
+
+    std::vector<Stream> top_limb_stream2;
+    std::vector<uint64_t*> top_limb_buffer2;
+    std::vector<void*> top_limb_buffer2_handle;
+    std::vector<VectorGPU<void*>> top_limbptr2;
+
+    std::vector<std::vector<Stream>> gatherStream;
+    std::vector<std::vector<Stream>> digitStream;
+    std::vector<std::vector<Stream>> digitStream2;
+
+    // std::vector<RNSPoly> key_switch_digits;
+    bool canP2P = false;
+
     //      std::array<Stream, 8> blockingStream;
     //      std::vector<std::vector<Stream>> asyncStream;
     RNSPoly& getKeySwitchAux();
     RNSPoly& getKeySwitchAux2();
-    RNSPoly& getModdownAux();
+    RNSPoly& getModdownAux(const int num);
 
     bool isValidPrimeId(const int i) const;
 
@@ -78,19 +109,22 @@ class Context {
 
     static int computeK(const std::vector<int>& logQ_d, std::vector<PrimeRecord>& Sprimes, const Parameters& param);
 
-    static std::vector<LimbRecord> generateSpecialMeta(const std::vector<std::vector<LimbRecord>>& meta,
-                                                       const std::vector<PrimeRecord>& specialPrime, const int ID0);
+    static std::vector<std::vector<LimbRecord>> generateSpecialMeta(const std::vector<std::vector<LimbRecord>>& meta,
+                                                                    const std::vector<PrimeRecord>& specialPrime,
+                                                                    const int ID0, const std::vector<int>& GPUid);
 
     static std::vector<std::vector<std::vector<LimbRecord>>> generateDecompMeta(
-        const std::vector<std::vector<LimbRecord>>& meta, const std::vector<std::vector<int>> dnum);
+        const std::vector<std::vector<LimbRecord>>& meta, const std::vector<std::vector<int>> dnum,
+        const std::vector<int>& vector, int L);
 
     static std::vector<std::vector<std::vector<LimbRecord>>> generateDigitMeta(
-        const std::vector<std::vector<LimbRecord>>& meta, const std::vector<LimbRecord>& specialMeta,
-        const std::vector<std::vector<int>> dnum);
+        const std::vector<std::vector<LimbRecord>>& meta, const std::vector<std::vector<LimbRecord>>& splitSpecialMeta,
+        const std::vector<LimbRecord>& specialMeta, const std::vector<std::vector<int>>& digitGPUid,
+        const std::vector<int>& GPUid);
 
     static std::vector<dim3> generateLimbGPUid(const std::vector<std::vector<LimbRecord>>& meta, const int L);
 
-    static std::vector<std::vector<int>> generateDigitGPUid(const int dnum, const std::vector<int>& devs);
+    static std::vector<std::vector<int>> generateGPUdigits(const int dnum, const std::vector<int>& devs);
 
    public:
     std::vector<uint64_t> ElemForEvalMult(int level, const double operand);
@@ -98,6 +132,7 @@ class Context {
     std::vector<double>& GetCoeffsChebyshev();
     int GetDoubleAngleIts();
     void AddBootPrecomputation(int slots, BootstrapPrecomputation&& precomp) const;
+    bool HasBootPrecomputation(int slots);
     static BootstrapPrecomputation& GetBootPrecomputation(int slots);
     void AddRotationKey(int index, KeySwitchingKey&& ksk);
     KeySwitchingKey& GetRotationKey(int index);
@@ -107,6 +142,12 @@ class Context {
     int GetBootK();
     int GetBootCorrectionFactor();
     static RESCALE_TECHNIQUE translateRescalingTechnique(lbcrypto::ScalingTechnique technique);
+    void PrepareNCCLCommunication();
+    const std::vector<int> generateDigitGPUid(std::vector<std::vector<LimbRecord>>& meta, const int L, const int dnum);
+    static std::vector<std::vector<LimbRecord>> generateSplitSpecialMeta(std::vector<LimbRecord>& specialMeta,
+                                                                         const std::vector<int> GPUid);
+    static std::vector<LimbRecord> generateGatherMeta(const std::vector<std::vector<LimbRecord>>& meta, int L);
+    std::vector<Ciphertext>& getBootstrapAuxilarCiphertexts();
 };
 }  // namespace FIDESlib::CKKS
 #endif  //FIDESLIB_CKKS_CONTEXT_CUH

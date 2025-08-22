@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.25.2)
+cmake_minimum_required (VERSION 3.25)
 
 # C++ Config
 
@@ -65,6 +65,9 @@ if (FIDESlib_FOUND)
 else ()
     message (FATAL_ERROR "PACKAGE FIDESlib NOT FOUND")
 endif ()
+
+# NVTX configuration
+include(nvtx/c/nvtxImportedTargets.cmake)
 
 # Executable definition.
 

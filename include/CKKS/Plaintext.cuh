@@ -30,8 +30,17 @@ class Plaintext {
     void rescale();
     void multScalar(double c, bool rescale);
 
+    void rotate_hoisted(const std::vector<int>& indexes, std::vector<Plaintext*>& results);
+
     void moddown();
     bool adjustPlaintextToCiphertext(const Plaintext& p, const Ciphertext& c);
+
+    void automorph(const int index);
+
+    //void addPt(const Plaintext& b);
+    //void multPt(const Plaintext& b, bool rescale = false);
+    // void multPtPt(const Plaintext& b, const Plaintext& c, bool rescale);
+    // void addMultPt(const Plaintext& b, const Plaintext& c, bool rescale = false);
 };
 
 }  // namespace FIDESlib::CKKS

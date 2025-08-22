@@ -1,6 +1,7 @@
 //
 // Created by carlosad on 14/03/24.
 //
+#include <errno.h>
 #include <iomanip>
 
 #include <gtest/gtest.h>
@@ -79,10 +80,9 @@ TEST_P(BaseTest, ConstructLimb) {
     int devcount = -1;
     cudaGetDeviceCount(&devcount);
 
-    std::vector<int> GPUs;
-    for (int i = 0; i < devcount; ++i)
-        GPUs.push_back(i);
+    std::vector<int> GPUs = devices;
 
+    CudaCheckErrorMod;
     FIDESlib::CKKS::Context cc(fideslibParams, GPUs);
 
     // Constructor memoria automática:
@@ -129,7 +129,7 @@ TEST_P(BaseTest, ConstructRNSPoly) {
     int devcount = -1;
     cudaGetDeviceCount(&devcount);
 
-    std::vector<int> GPUs{0};
+    std::vector<int> GPUs = devices;
     //for (int i = 0; i < devcount; ++i) GPUs.push_back(i);
 
     FIDESlib::CKKS::Context cc{fideslibParams, GPUs};
@@ -182,13 +182,7 @@ TEST_P(BaseTest, ConstructRNSPolySimulateMultiGPU) {
 }
 
 TEST_P(BaseTest, ConstructCiphertext) {
-
-    int devcount = -1;
-    cudaGetDeviceCount(&devcount);
-
-    std::vector<int> GPUs;
-    for (int i = 0; i < devcount; ++i)
-        GPUs.push_back(i);
+    std::vector<int> GPUs = devices;
 
     FIDESlib::CKKS::Context cc{fideslibParams, GPUs};
 

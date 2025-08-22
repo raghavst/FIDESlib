@@ -23,7 +23,8 @@ __global__ void conv1_(T* a, const T q_hat_inv, const int primeid);
  * @param L
  */
 template <ALGO algo = ALGO_SHOUP>
-__global__ void ModDown2(void** __restrict__ a, const __grid_constant__ int n, void** __restrict__ b);
+__global__ void ModDown2(void** __restrict__ a, const __grid_constant__ int n, void** __restrict__ b,
+                         const __grid_constant__ int primeid_init);
 
 template <ALGO algo = ALGO_SHOUP>
 __global__ void DecompAndModUpConv(void** __restrict__ a, const int __grid_constant__ n, void** __restrict__ b,

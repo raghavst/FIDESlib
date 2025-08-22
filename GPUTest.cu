@@ -1,8 +1,8 @@
 #include <cuda_runtime.h>
-#include <iostream>
 #include <nvtx3/nvToolsExt.h>
+#include <iostream>
 
-int main(){
+int main() {
     int deviceCount, device;
     int gpuDeviceCount = 0;
     struct cudaDeviceProp properties;
@@ -12,8 +12,11 @@ int main(){
     /* machines with no GPUid can still report one emulation device */
     for (device = 0; device < deviceCount; ++device) {
         cudaGetDeviceProperties(&properties, device);
-        if (properties.major != 9999) /* 9999 means emulation only */
+
+        if (properties.major != 9999) { /* 9999 means emulation only */
             ++gpuDeviceCount;
+            printf("GPU %d: %s\n", device, properties.name);
+        }
     }
     printf("%d GPU CUDA device(s) found\n", gpuDeviceCount);
 

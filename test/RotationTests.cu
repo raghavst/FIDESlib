@@ -26,13 +26,6 @@ namespace FIDESlib::Testing {
 class RotationTests : public GeneralParametrizedTest {};
 
 TEST_P(RotationTests, AutomorphTest_Single_Limb) {
-    for (auto& i : cached_cc) {
-        i.second.first->ClearEvalAutomorphismKeys();
-        i.second.first->ClearEvalMultKeys();
-        if (std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(i.second.first->GetScheme()->m_FHE))
-            std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(i.second.first->GetScheme()->m_FHE)
-                ->m_bootPrecomMap.clear();
-    }
     cc->Enable(lbcrypto::PKE);
     cc->Enable(lbcrypto::KEYSWITCH);
     cc->Enable(lbcrypto::LEVELEDSHE);

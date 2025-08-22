@@ -36,8 +36,8 @@ BENCHMARK_DEFINE_F(GeneralFixture, CiphertextModUp)(benchmark::State& state) {
         auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
 
         state.SetIterationTime(elapsed.count());
-        GPUct1.c0.generateSpecialLimbs();
-        GPUct1.c1.generateSpecialLimbs();
+        GPUct1.c0.generateSpecialLimbs(false);
+        GPUct1.c1.generateSpecialLimbs(false);
         GPUct1.modDown();
     }
 
@@ -68,8 +68,8 @@ BENCHMARK_DEFINE_F(GeneralFixture, CiphertextModDown)(benchmark::State& state) {
     state.counters["p_batch"] = state.range(2);
     for (auto _ : state) {
         GPUct1.modUp();
-        GPUct1.c0.generateSpecialLimbs();
-        GPUct1.c1.generateSpecialLimbs();
+        GPUct1.c0.generateSpecialLimbs(false);
+        GPUct1.c1.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         GPUct1.modDown();
         CudaCheckErrorMod;
@@ -104,8 +104,8 @@ BENCHMARK_DEFINE_F(GeneralFixture, CiphertextModUpModDown)(benchmark::State& sta
 
     for (auto _ : state) {
         GPUct1.modUp();
-        GPUct1.c0.generateSpecialLimbs();
-        GPUct1.c1.generateSpecialLimbs();
+        GPUct1.c0.generateSpecialLimbs(false);
+        GPUct1.c1.generateSpecialLimbs(false);
         GPUct1.modDown();
         CudaCheckErrorMod;
     }
@@ -113,8 +113,8 @@ BENCHMARK_DEFINE_F(GeneralFixture, CiphertextModUpModDown)(benchmark::State& sta
     CudaCheckErrorMod;
 }
 
-BENCHMARK_REGISTER_F(GeneralFixture, CiphertextModUp)->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG})->UseManualTime();
-BENCHMARK_REGISTER_F(GeneralFixture, CiphertextModDown)->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG})->UseManualTime();
-BENCHMARK_REGISTER_F(GeneralFixture, CiphertextModUpModDown)->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG});
+BENCHMARK_REGISTER_F(GeneralFixture, CiphertextModUp)->ArgsProduct({{3, 6}, {0}, BATCH_CONFIG})->UseManualTime();
+BENCHMARK_REGISTER_F(GeneralFixture, CiphertextModDown)->ArgsProduct({{3, 6}, {0}, BATCH_CONFIG})->UseManualTime();
+BENCHMARK_REGISTER_F(GeneralFixture, CiphertextModUpModDown)->ArgsProduct({{3, 6}, {0}, BATCH_CONFIG});
 
 }  // namespace FIDESlib::Benchmarks

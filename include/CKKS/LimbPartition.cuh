@@ -6,16 +6,24 @@
 #define FIDESLIB_CKKS_LIMBPARTITION_CUH
 
 #include "Limb.cuh"
+#include "LimbUtils.cuh"
 #include "NTT.cuh"
 
+#ifdef NCCL
+#include "nccl.h"
+#endif
 namespace FIDESlib::CKKS {
 class LimbPartition {
    public:
     Context& cc;
+    int* level;
     const int id;
     const int device;
-    const int rank;  // For NCCL / RCCL
-
+#ifdef NCCL
+    const ncclComm_t rank;  // For NCCL / RCCL
+#else
+    const int rank;
+#endif
     Stream s;
 
     std::vector<LimbRecord>& meta;
@@ -23,11 +31,13 @@ class LimbPartition {
     const std::vector<int>& digitid;
     std::vector<std::vector<LimbRecord>>& DECOMPmeta;
     std::vector<std::vector<LimbRecord>>& DIGITmeta;
+    std::vector<LimbRecord>& GATHERmeta;
 
     std::vector<LimbImpl> limb;
     std::vector<LimbImpl> SPECIALlimb;
     std::vector<std::vector<LimbImpl>> DECOMPlimb;
     std::vector<std::vector<LimbImpl>> DIGITlimb;
+    std::vector<LimbImpl> GATHERlimb;
 
     void** bufferAUXptrs;
     VectorGPU<void*> limbptr;
@@ -36,13 +46,17 @@ class LimbPartition {
     VectorGPU<void*> SPECIALauxptr;
 
     std::vector<VectorGPU<void*>> DECOMPlimbptr;
-    std::vector<VectorGPU<void*>> DECOMPauxptr;
+    //  std::vector<VectorGPU<void*>> DECOMPauxptr;
     std::vector<VectorGPU<void*>> DIGITlimbptr;
-    std::vector<VectorGPU<void*>> DIGITauxptr;
+    // std::vector<VectorGPU<void*>> DIGITauxptr;
+    VectorGPU<void*> GATHERptr;
 
     uint64_t* bufferDECOMPandDIGIT = nullptr;
     uint64_t* bufferSPECIAL = nullptr;
     uint64_t* bufferLIMB = nullptr;
+    uint64_t* bufferGATHER = nullptr;
+    void* bufferDECOMPandDIGIT_handle = nullptr;
+    void* bufferGATHER_handle = nullptr;
 
     /*
     LimbPartition(LimbPartition && lp) :
@@ -62,9 +76,16 @@ class LimbPartition {
 
     LimbPartition(LimbPartition&& l) noexcept;
 
-    LimbPartition(Context& cc, const int id);
+    LimbPartition(Context& cc, int* level, const int id);
 
     ~LimbPartition();
+
+    void scaleByP();
+
+    void modupMGPU(LimbPartition& aux);
+
+    void multNoModdownEnd(LimbPartition& c0, const LimbPartition& bc0, const LimbPartition& bc1,
+                          const LimbPartition& in, const LimbPartition& aux);
 
     enum GENERATION_MODE { AUTOMATIC, SINGLE_BUFFER, DUAL_BUFFER };
 
@@ -74,10 +95,10 @@ class LimbPartition {
 
     void generateLimb();
 
-    void generateSpecialLimb();
+    void generateSpecialLimb(bool zero_out);
 
-    void add(const LimbPartition& p);
-    void add(const LimbPartition& a, const LimbPartition& b);
+    void add(const LimbPartition& p, const bool ext);
+    void add(const LimbPartition& a, const LimbPartition& b, const bool ext_a, const bool ext_b);
 
     void sub(const LimbPartition& p);
 
@@ -85,10 +106,10 @@ class LimbPartition {
 
     void multPt(const LimbPartition& p);
 
-    void modup(int level, LimbPartition& aux_partition);
+    void modup(LimbPartition& aux_partition);
 
     template <ALGO algo = ALGO_SHOUP>
-    void moddown(LimbPartition& auxLimbs, bool ntt, bool free_special_limbs, const int level);
+    void moddown(LimbPartition& auxLimbs, bool ntt, bool free_special_limbs);
 
     void rescale();
 
@@ -106,7 +127,7 @@ class LimbPartition {
     };
 
     template <ALGO algo = ALGO_SHOUP, NTT_MODE mode = NTT_NONE>
-    void NTT(int batch = 1, NTT_fusion_fields fields = NTT_fusion_fields{}, const int limbsize = -1);
+    void NTT(int batch = 1, bool sync = false, NTT_fusion_fields fields = NTT_fusion_fields{});
 
     struct INTT_fusion_fields {
         OptReference res0;
@@ -120,7 +141,7 @@ class LimbPartition {
     };
 
     template <ALGO algo = ALGO_SHOUP, INTT_MODE mode = INTT_NONE>
-    void INTT(int batch = 1, INTT_fusion_fields fields = INTT_fusion_fields{});
+    void INTT(int batch = 1, bool sync = false, INTT_fusion_fields fields = INTT_fusion_fields{});
 
     static std::vector<VectorGPU<void*>> generateDecompLimbptr(void** buffer,
                                                                const std::vector<std::vector<LimbRecord>>& DECOMPmeta,
@@ -131,33 +152,34 @@ class LimbPartition {
     void generateAllDigitLimb(uint64_t* pInt, size_t offset);
 
     void copyLimb(const LimbPartition& partition);
+    void copySpecialLimb(const LimbPartition& p);
 
-    void generateAllDecompAndDigit();
+    void generateAllDecompAndDigit(bool iskey);
 
     void mult1AddMult23Add4(const LimbPartition& partition1, const LimbPartition& partition2,
                             const LimbPartition& partition3, const LimbPartition& partition4);
 
     void mult1Add2(const LimbPartition& partition1, const LimbPartition& partition2);
 
-    void generateLimbSingleMalloc(int num_limbs);
-    void generateLimbConstant(int num_limbs);
+    void generateLimbSingleMalloc();
+    void generateLimbConstant();
 
     void loadDecompDigit(const std::vector<std::vector<std::vector<uint64_t>>>& data,
                          const std::vector<std::vector<uint64_t>>& moduli);
 
-    void dotKSK(const LimbPartition& src, const LimbPartition& ksk, const int level, const bool inplace = false,
+    void dotKSK(const LimbPartition& src, const LimbPartition& ksk, const bool inplace = false,
                 const LimbPartition* limbsrc = nullptr);
 
     void multElement(const LimbPartition& partition1, const LimbPartition& partition2);
 
     void multModupDotKSK(LimbPartition& c1, const LimbPartition& c1tilde, LimbPartition& c0,
-                         const LimbPartition& c0tilde, const LimbPartition& ksk_a, const LimbPartition& ksk_b,
-                         const int level);
+                         const LimbPartition& c0tilde, const LimbPartition& ksk_a, const LimbPartition& ksk_b);
 
-    void automorph(const int index, const int br);
+    int getLimbSize(int level);
+    void automorph(const int index, const int br, LimbPartition* src, bool ext);
 
     void automorph_multi(const int index, const int br);
-    void modupInto(LimbPartition& partition, int i, LimbPartition& partition1);
+    void modupInto(LimbPartition& partition, LimbPartition& partition1);
     void multScalar(std::vector<uint64_t>& vector);
     void squareElement(const LimbPartition& p);
     void binomialSquareFold(LimbPartition& c0_res, const LimbPartition& c2_key_switched_0,
@@ -168,10 +190,25 @@ class LimbPartition {
     void addMult(const LimbPartition& partition, const LimbPartition& partition1);
     void broadcastLimb0();
     void evalLinearWSum(uint32_t n, std::vector<const LimbPartition*> ps, std::vector<uint64_t>& weights);
-    void rotateModupDotKSK(LimbPartition& c1, LimbPartition& c0, const LimbPartition& ksk_a, const LimbPartition& ksk_b,
-                           const int level);
-    void squareModupDotKSK(LimbPartition& c1, LimbPartition& c0, const LimbPartition& ksk_a, const LimbPartition& ksk_b,
-                           const int level);
+    void rotateModupDotKSK(LimbPartition& c1, LimbPartition& c0, const LimbPartition& ksk_a,
+                           const LimbPartition& ksk_b);
+    void squareModupDotKSK(LimbPartition& c1, LimbPartition& c0, const LimbPartition& ksk_a,
+                           const LimbPartition& ksk_b);
+    void rescaleMGPU();
+    void moddownMGPU(LimbPartition& auxLimbs, bool ntt, bool free_special_limbs);
+    void generatePartialSpecialLimb();
+    void dotKSKfused(LimbPartition& out2, const LimbPartition& digitSrc, const LimbPartition& ksk_a,
+                     const LimbPartition& ksk_b, const LimbPartition& src);
+    void dotProductPt(LimbPartition& c1, const std::vector<const LimbPartition*>& c0s,
+                      const std::vector<const LimbPartition*>& c1s, const std::vector<const LimbPartition*>& pts,
+                      bool ext);
+    void generateGatherLimb(bool iskey);
+    void dotKSKfusedMGPU(LimbPartition& out2, const LimbPartition& digitSrc, const LimbPartition& ksk_a,
+                         const LimbPartition& ksk_b, const LimbPartition& src);
+    void modup_ksk_moddown_mgpu(LimbPartition& c0, const LimbPartition& ksk_a, const LimbPartition& ksk_b,
+                                LimbPartition& auxLimbs1, LimbPartition& auxLimbs2, const bool moddown);
+    void broadcastLimb0_mgpu();
+    void doubleRescaleMGPU(LimbPartition& partition);
 };
 
 }  // namespace FIDESlib::CKKS

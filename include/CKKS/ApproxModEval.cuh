@@ -5,9 +5,16 @@
 #ifndef GPUCKKS_APPROXMODEVAL_CUH
 #define GPUCKKS_APPROXMODEVAL_CUH
 
-#include "Ciphertext.cuh"
-
+#include <cinttypes>
+#include <vector>
+#include "CKKS/forwardDefs.cuh"
 namespace FIDESlib::CKKS {
+/** OpenFHE: for degree 5 or less uses naïve implementation, on FIDESlib, its always Patterson Stockmayer
+ *  I suggest to only use range [-1, 1]
+ * */
+void evalChebyshevSeries(Ciphertext& ctxt, const KeySwitchingKey& keySwitchingKey, std::vector<double>& coefficients,
+                         double lower_bound = -1.0, double upper_bound = 1.0);
+
 void multMonomial(Ciphertext& ctxt, int power);
 
 void approxModReduction(Ciphertext& ctxtEnc, Ciphertext& ctxtEncI, const KeySwitchingKey& keySwitchingKey,

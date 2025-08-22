@@ -6,7 +6,7 @@
 #include <vector>
 #include "CKKS/forwardDefs.cuh"
 //#include "CKKS/BootstrapPrecomputation.cuh"
-#include "openfhe/pke/openfhe.h"
+#include "pke/openfhe.h"
 
 namespace FIDESlib::CKKS {
 
@@ -107,6 +107,10 @@ RawKeySwitchKey GetRotationKeySwitchKey(const lbcrypto::KeyPair<lbcrypto::DCRTPo
 
 RawKeySwitchKey GetConjugateKeySwitchKey(const lbcrypto::KeyPair<lbcrypto::DCRTPoly>& keys,
                                          lbcrypto::CryptoContext<lbcrypto::DCRTPoly> cc);
+
+void GenAndAddRotationKeys(lbcrypto::CryptoContext<lbcrypto::DCRTPoly>& cc,
+                           const lbcrypto::KeyPair<lbcrypto::DCRTPoly>& keys, FIDESlib::CKKS::Context& GPUcc,
+                           std::vector<int> indexes);
 
 void AddBootstrapPrecomputation(lbcrypto::CryptoContext<lbcrypto::DCRTPoly> cc,
                                 const lbcrypto::KeyPair<lbcrypto::DCRTPoly>& keys, int slots,

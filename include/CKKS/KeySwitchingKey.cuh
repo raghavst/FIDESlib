@@ -23,6 +23,8 @@ class KeySwitchingKey {
     Context& cc;
     RNSPoly a;
     RNSPoly b;
+    // std::vector<RNSPoly> mgpu_a;
+    // std::vector<RNSPoly> mgpu_b;
 
     explicit KeySwitchingKey(Context& cc);
 

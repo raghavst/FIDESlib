@@ -49,10 +49,11 @@ void FIDESlib::Testing::fft(std::vector<uint64_t>& a, bool invert, uint64_t root
 }
 
 void FIDESlib::Testing::fft_forPrime(std::vector<uint64_t>& a, bool invert, int primeid, int its) {
-    std::cout << "N: " << a.size() << (invert ? "INTT" : "NTT")
+    /* std::cout << "N: " << a.size() << (invert ? "INTT" : "NTT")
               << " w: " << ((uint64_t*)hG_.psi[primeid])[a.size() >> 2]
               << " w^-1: " << ((uint64_t*)hG_.inv_psi[primeid])[a.size() >> 2] << " p: " << hC_.primes[primeid]
               << std::endl;
+    */
     fft(a, invert, /*hG_.root[primeid]*/ ((uint64_t*)hG_.psi[primeid])[a.size() >> 2],
         /*hG_.inv_root[primeid]*/ ((uint64_t*)hG_.inv_psi[primeid])[a.size() >> 2], hC_.primes[primeid], its);
 }
@@ -128,7 +129,9 @@ void FIDESlib::Testing::fft_2d(std::vector<T>& a, int sqrtN, int primeid) {
 
         m >>= 1;
         maskPsi |= (maskPsi >> 1);
-        int log_psi = std::bit_width((uint32_t)blockDim) - 2;  // Ojo al logaritmo.
+        // int log_psi = std::bit_width((uint32_t)blockDim) - 2;  // Ojo al logaritmo.
+        int log_psi = 32 - __builtin_clz((uint32_t)blockDim) - 2;
+
         //if(blockIdx.x == 0 && threadIdx.x == 0) printf("log_psi: %d", log_psi);
 
         for (; m >= 1; m >>= 1, log_psi--, maskPsi |= (maskPsi >> 1)) {

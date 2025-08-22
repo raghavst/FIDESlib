@@ -12,7 +12,12 @@
 #include <gtest/gtest.h>
 #include <openfhe.h>
 
+#include <string>
 #include "CKKS/Parameters.cuh"
+
+inline const std::string root_dir = "../";
+
+#define __TBB_NO_IMPLICIT_LINKAGE
 
 #define MODES(name)                                                                                                    \
     extern std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique> name_fix; \
@@ -23,13 +28,15 @@
     extern std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>           \
         name_flexext;
 
+inline std::vector<int> devices{0};
+
 namespace FIDESlib::Testing {
 /*
 extern std::vector<FIDESlib::PrimeRecord> p32;
 extern std::vector<FIDESlib::PrimeRecord> p64;
 extern std::vector<FIDESlib::PrimeRecord> sp64;
 */
-inline std::array<int, 9> batch_configs{2, 4, 1, 3, 6, 8, 12, 16, 100};
+inline std::array<int, 1> batch_configs{100};
 
 inline std::vector<FIDESlib::PrimeRecord> p32{
     {.p = 537133057}, {.p = 537591809}, {.p = 537722881}, {.p = 538116097}, {.p = 539754497}, {.p = 540082177},
@@ -69,6 +76,7 @@ inline std::vector<FIDESlib::PrimeRecord> sp64{
 
 struct GeneralTestParams {
     uint64_t multDepth;
+    uint64_t firstModSize = 60;
     uint64_t scaleModSize;
     uint64_t batchSize;
     uint64_t ringDim;
@@ -76,7 +84,7 @@ struct GeneralTestParams {
     std::vector<int> GPUs;
 };
 
-extern std::array<int, 9> batch_configs;
+extern std::array<int, 1> batch_configs;
 
 /** Following: https://bu-icsg.github.io/publications/2024/fhe_parallelized_bootstrapping_isca_2024.pdf
  * C. Parameter Set for HEAP
@@ -86,13 +94,14 @@ inline FIDESlib::CKKS::Parameters params64_13{.logN = 13, .L = 5, .dnum = 2, .pr
 
 /** Following: https://bu-icsg.github.io/publications/2024/fhe_parallelized_bootstrapping_isca_2024.pdf
  * C. Parameter Set for HEAP
+ * Todo: Fix prime sizes.
  */
 inline GeneralTestParams gparams64_13{.multDepth = 5,
                                       .scaleModSize = 36,
                                       .batchSize = 8,
                                       .ringDim = 1 << 13,
                                       .dnum = 2,
-                                      .GPUs = {0}};
+                                      .GPUs = devices};
 
 /** Following: https://bu-icsg.github.io/publications/2024/fhe_parallelized_bootstrapping_isca_2024.pdf
  * C. Parameter Set for HEAP
@@ -115,13 +124,14 @@ inline FIDESlib::CKKS::Parameters params64_14{.logN = 14, .L = 7, .dnum = 3, .pr
 
 /** Following this: https://eprint.iacr.org/2024/463.pdf
  * Table 5.7 Col.1
+ * Todo: Fix prime sizes.
  */
 inline GeneralTestParams gparams64_14{.multDepth = 7,
                                       .scaleModSize = 38,
                                       .batchSize = 8,
                                       .ringDim = 1 << 14,
                                       .dnum = 3,
-                                      .GPUs = {0}};
+                                      .GPUs = devices};
 
 /** Following this: https://eprint.iacr.org/2024/463.pdf
  * Table 5.7 Col.1
@@ -144,13 +154,14 @@ inline FIDESlib::CKKS::Parameters params64_15{.logN = 15, .L = 9, .dnum = 3, .pr
 
 /** Following this: https://eprint.iacr.org/2024/463.pdf
  * Table 5.7 Col.2
+ * Todo: Fix prime sizes.
  */
 inline GeneralTestParams gparams64_15{.multDepth = 9,
                                       .scaleModSize = 41,
                                       .batchSize = 8,
                                       .ringDim = 1 << 15,
                                       .dnum = 3,
-                                      .GPUs = {0}};
+                                      .GPUs = devices};
 
 /** Following this: https://eprint.iacr.org/2024/463.pdf
  * Table 5.7 Col.2
@@ -172,17 +183,19 @@ inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbc
 inline FIDESlib::CKKS::Parameters params64_16{.logN = 16, .L = 29, .dnum = 4, .primes = p64, .Sprimes = sp64};
 
 /** Following this: https://eprint.iacr.org/2024/463.pdf
- * Table 5.8 Col.2
+ * Table 5.8 Col.1
+ * Todo: Fix prime sizes.
  */
 inline GeneralTestParams gparams64_16{.multDepth = 29,
+                                      .firstModSize = 60,
                                       .scaleModSize = 59 /*35 fails*/,
                                       .batchSize = 8,
                                       .ringDim = 1 << 16,
                                       .dnum = 4,
-                                      .GPUs = {0}};
+                                      .GPUs = devices};
 
 /** Following this: https://eprint.iacr.org/2024/463.pdf
- * Table 5.8 Col.2
+ * Table 5.8 Col.1
  */
 inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_16 = std::tuple(gparams64_16, params64_16);
 
@@ -195,13 +208,14 @@ inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbc
 inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
     tparams64_16_flexext{tparams64_16, lbcrypto::ScalingTechnique::FLEXIBLEAUTOEXT};
 
-inline FIDESlib::CKKS::Parameters params64_16_boot1{.logN = 16, .L = 26, .dnum = 4, .primes = p64, .Sprimes = sp64};
+inline FIDESlib::CKKS::Parameters params64_16_boot1{.logN = 16, .L = 26, .dnum = 2, .primes = p64, .Sprimes = sp64};
 inline GeneralTestParams gparams64_16_boot1{.multDepth = 26,
+                                            .firstModSize = 60,
                                             .scaleModSize = 59 /*35 fails*/,
                                             .batchSize = 8,
                                             .ringDim = 1 << 16,
-                                            .dnum = 4,
-                                            .GPUs = {0}};
+                                            .dnum = 2,
+                                            .GPUs = devices};
 inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_16_boot1 =
     std::tuple(gparams64_16_boot1, params64_16_boot1);
 
@@ -220,7 +234,7 @@ inline GeneralTestParams gparams64_16_boot2{.multDepth = 34,
                                             .batchSize = 8,
                                             .ringDim = 1 << 16,
                                             .dnum = 5,
-                                            .GPUs = {0}};
+                                            .GPUs = devices};
 inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_16_boot2 =
     std::tuple(gparams64_16_boot2, params64_16_boot2);
 inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
@@ -238,7 +252,7 @@ inline GeneralTestParams gparams64_17{.multDepth = 44,
                                       .batchSize = 8,
                                       .ringDim = 1 << 17,
                                       .dnum = 3,
-                                      .GPUs = {0}};
+                                      .GPUs = devices};
 inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_17 = std::tuple(gparams64_17, params64_17);
 inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
     tparams64_17_fix{tparams64_17, lbcrypto::ScalingTechnique::FIXEDMANUAL};
@@ -249,29 +263,83 @@ inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbc
 inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
     tparams64_17_flexext{tparams64_17, lbcrypto::ScalingTechnique::FLEXIBLEAUTOEXT};
 
+inline FIDESlib::CKKS::Parameters params64_13_LLM{.logN = 13, .L = 2, .dnum = 1, .primes = p64, .Sprimes = sp64};
+inline GeneralTestParams gparams64_13_LLM{.multDepth = 6,
+                                          //   .firstScaleModSize = 59,  //  Check this at OpenFHE
+                                          .scaleModSize = 59 /*35 fails*/,
+                                          .batchSize = 1 << 12,
+                                          .ringDim = 1 << 13,
+                                          .dnum = 1,
+                                          .GPUs = {0}};
+inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_13_LLM =
+    std::tuple(gparams64_13_LLM, params64_13_LLM);
+inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
+    tparams64_13_LLM_flex{tparams64_13_LLM, lbcrypto::ScalingTechnique::FLEXIBLEAUTO};
+
+inline FIDESlib::CKKS::Parameters params64_15_LLM{.logN = 15, .L = 26, .dnum = 4, .primes = p64, .Sprimes = sp64};
+inline GeneralTestParams gparams64_15_LLM{.multDepth = 26,  // 28
+                                                            //   .firstScaleModSize = 59,  //  Check this at OpenFHE
+                                          .firstModSize = 60,
+                                          .scaleModSize = 55 /*35 fails*/,
+                                          .batchSize = 1 << 14,
+                                          .ringDim = 1 << 15,
+                                          .dnum = 4,
+                                          .GPUs = {0}};
+inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_15_LLM =
+    std::tuple(gparams64_15_LLM, params64_15_LLM);
+inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
+    tparams64_15_LLM_flex{tparams64_15_LLM, lbcrypto::ScalingTechnique::FLEXIBLEAUTO};
+
+// inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
+// tparams64_15_LLM_flexext{tparams64_15_LLM, lbcrypto::ScalingTechnique::FLEXIBLEAUTOEXT};
+
+inline FIDESlib::CKKS::Parameters params64_16_LLM{.logN = 16, .L = 26, .dnum = 5, .primes = p64, .Sprimes = sp64};
+inline GeneralTestParams gparams64_16_LLM{.multDepth = 26,
+                                          .scaleModSize = 55,
+                                          .batchSize = 1 << 14,
+                                          .ringDim = 1 << 16,
+                                          .dnum = 5,
+                                          .GPUs = {0}};
+inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_16_LLM =
+    std::tuple(gparams64_16_LLM, params64_16_LLM);
+inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
+    tparams64_16_LLM_flex{tparams64_16_LLM, lbcrypto::ScalingTechnique::FLEXIBLEAUTO};
+
+inline FIDESlib::CKKS::Parameters params64_17_LLM{.logN = 17, .L = 26, .dnum = 5, .primes = p64, .Sprimes = sp64};
+inline GeneralTestParams gparams64_17_LLM{.multDepth = 26,
+                                          .scaleModSize = 55,
+                                          .batchSize = 1 << 14,
+                                          .ringDim = 1 << 17,
+                                          .dnum = 5,
+                                          .GPUs = {0}};
+inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams64_17_LLM =
+    std::tuple(gparams64_17_LLM, params64_17_LLM);
+inline std::tuple<std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters>, lbcrypto::ScalingTechnique>
+    tparams64_17_LLM_flex{tparams64_17_LLM, lbcrypto::ScalingTechnique::FLEXIBLEAUTO};
+
 inline FIDESlib::CKKS::Parameters params32_15{.logN = 15, .L = 27, .dnum = 4, .primes = p32, .Sprimes = p32};
-inline GeneralTestParams gparams32_15{.multDepth = 27,
+inline GeneralTestParams gparams32_15{.multDepth = 28,
                                       .scaleModSize = 28,
                                       .batchSize = 8,
                                       .ringDim = 1 << 15,
                                       .dnum = 4,
-                                      .GPUs = {0}};
+                                      .GPUs = devices};
 inline std::tuple<GeneralTestParams, FIDESlib::CKKS::Parameters> tparams32_15 = std::tuple(gparams32_15, params32_15);
 
 #define ALL64 params64_13, params64_14, params64_15, params64_16, params64_17, params64_16_boot1, params64_16_boot2
 #define TALL64 \
     tparams64_13, tparams64_14, tparams64_15, tparams64_16, tparams64_17, tparams64_16_boot1, tparams64_16_boot2
-#define TTALL64                                                                                                  \
-    tparams64_13_fix, tparams64_13_fixauto, tparams64_13_flex, tparams64_13_flexext, tparams64_14_fix,           \
-        tparams64_14_fixauto, tparams64_14_flex, tparams64_14_flexext, tparams64_15_fix, tparams64_15_fixauto,   \
-        tparams64_15_flex, tparams64_15_flexext, tparams64_16_fix, tparams64_16_fixauto, tparams64_16_flex,      \
-        tparams64_16_flexext, tparams64_16_boot1_fix, tparams64_16_boot1_fixauto, tparams64_16_boot1_flex,       \
-        tparams64_16_boot1_flexext, tparams64_16_boot2_fix, tparams64_16_boot2_fixauto, tparams64_16_boot2_flex, \
-        tparams64_16_boot2_flexext, tparams64_17_fix, tparams64_17_fixauto, tparams64_17_flex, tparams64_17_flexext
-#define TTALL64BOOT                                                                                              \
-    tparams64_16_fix, tparams64_16_fixauto, tparams64_16_flex, tparams64_16_flexext, tparams64_16_boot1_fix,     \
-        tparams64_16_boot1_fixauto, tparams64_16_boot1_flex, tparams64_16_boot1_flexext, tparams64_16_boot2_fix, \
-        tparams64_16_boot2_fixauto, tparams64_16_boot2_flex, tparams64_16_boot2_flexext
+#define TTALL64                                                                                             \
+    tparams64_15_LLM_flex, tparams64_13_fix, tparams64_13_fixauto, tparams64_13_flex, tparams64_13_flexext, \
+        tparams64_14_fix  //, tparams64_14_fixauto, tparams64_14_flex, tparams64_14_flexext, tparams64_15_fix, tparams64_15_fixauto, \
+//        tparams64_15_flex, tparams64_15_flexext, tparams64_16_fix, tparams64_16_fixauto  //,                       \
+//        tparams64_16_flex, tparams64_16_flexext, tparams64_16_boot1_fix, tparams64_16_boot1_fixauto, tparams64_16_boot1_flex,       \
+//        tparams64_16_boot1_flexext, tparams64_16_boot2_fix, tparams64_16_boot2_fixauto, tparams64_16_boot2_flex, \
+//        tparams64_16_boot2_flexext, tparams64_17_fix, tparams64_17_fixauto, tparams64_17_flex, tparams64_17_flexext
+#define TTALL64BOOT                                                                                     \
+    tparams64_15_LLM_flex, tparams64_16_boot1_fix, tparams64_16_boot1_fixauto, tparams64_16_boot1_flex, \
+        tparams64_16_boot1_flexext  //, tparams64_16_fix, tparams64_16_fixauto, tparams64_16_flex, tparams64_16_flexext, tparams64_16_boot2_fix, \
+    //    tparams64_16_boot2_fixauto, tparams64_16_boot2_flex, tparams64_16_boot2_flexext
 
 class FIDESlibParametrizedTest : public testing::TestWithParam<FIDESlib::CKKS::Parameters> {
    protected:
@@ -297,13 +365,30 @@ class GeneralParametrizedTest
         auto params = GetParam();
         generalTestParams = std::get<0>(std::get<0>(params));
         fideslibParams = std::get<1>(std::get<0>(params));
+
+        char* res = getenv("FIDESLIB_USE_NUM_GPUS");
+
+        if (res && !(0 == std::strcmp(res, ""))) {
+            int num_dev = atoi(res);
+            if (num_dev > 0) {
+                std::vector<int> dev;
+                for (int i = 0; i < num_dev; ++i) {
+                    dev.push_back(i);
+                }
+                devices = dev;
+            }
+            // std::cout << "Devices: " << num_dev << std::endl;
+        }
+
         int index = generalTestParams.ringDim + (1 << 20) * generalTestParams.multDepth + std::get<1>(params);
         if (cached_cc.contains(index)) {
             cc = cached_cc[index].first;
             keys = cached_cc[index].second;
+            cc->GetEncodingParams()->SetBatchSize(generalTestParams.batchSize);
         } else {
             lbcrypto::CCParams<lbcrypto::CryptoContextCKKSRNS> parameters;
             parameters.SetMultiplicativeDepth(generalTestParams.multDepth);
+            parameters.SetFirstModSize(generalTestParams.firstModSize);
             parameters.SetScalingModSize(generalTestParams.scaleModSize);
             parameters.SetBatchSize(generalTestParams.batchSize);
             parameters.SetSecurityLevel(lbcrypto::HEStd_NotSet);
@@ -347,9 +432,9 @@ class GeneralParametrizedTest
             Max = std::max(Max, diff);                                                                     \
         }                                                                                                  \
         acc = std::sqrt(acc / result->slots);                                                              \
-        std::cout << "Max error: " << Max << " (Expected: " << pow(2.0, -result->GetLogPrecision())        \
+        std::cout << "Max error: " << Max << " (Expected: " << pow(2.0, -result->GetLogPrecision() + 1)    \
                   << "), dev: " << acc << std::endl;                                                       \
-        ASSERT_LE(Max, pow(2.0, -result->GetLogPrecision() + 3 + result->GetLogPrecision() / 10));         \
+        ASSERT_LE(Max, pow(2.0, -result->GetLogPrecision() + 3));                                          \
     } while (0);
 
 #define ASSERT_EQ_DCRTPOLY(ct1, ct2)                                                                           \

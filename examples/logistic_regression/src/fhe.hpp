@@ -4,23 +4,34 @@
 #include <openfhe.h>
 
 #include "data.hpp"
-
+/**
+	Bootstrap level usage optimization
+*/
+extern bool prescale;
+extern std::vector<int> devices;
 /**
  * Bootstrapping level budget.
  */
-const std::vector<uint32_t> level_budget = {2, 2};
+extern std::vector<uint32_t> level_budget;
+
+/**
+ * Rotkeys per linear transform
+ */
+extern std::vector<uint32_t> bStep;
+extern int bStepAcc;
 /**
  * Ring dimension used.
  */
-constexpr uint32_t ring_dim = 1 << 16;
+extern uint32_t ring_dim;
 /**
  * Number of slots used.
  */
-constexpr uint32_t num_slots = ring_dim / 2;
+extern uint32_t num_slots;
 /**
  * Global OpenFHE context.
  */
 extern lbcrypto::CryptoContext<lbcrypto::DCRTPoly> cc_cpu;
+extern lbcrypto::KeyPair<lbcrypto::DCRTPoly> keys;
 /**
  * Momentum vector for accelerated gradient descent.
  */
@@ -36,8 +47,8 @@ extern lbcrypto::Plaintext first_column_mask_1;
 extern lbcrypto::Plaintext first_column_mask_3;
 
 /**
-* Do bootstrapping every 2 iterations
-*/
+ * Do bootstrapping every 2 iterations
+ */
 extern bool bootstrap_every_two;
 
 /**
@@ -73,13 +84,11 @@ void prepare_cpu_context(const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys, size
  * @return Iteration times.
  */
 std::vector<iteration_time_t> logistic_regression_cpu_train(const std::vector<std::vector<double>> &data,
-                                   const std::vector<std::vector<double>> &results,
-                                   lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                   size_t rows,
-                                   size_t columns,
-                                   size_t samples_last_ciphertext,
-                                   size_t training_iterations,
-                                   const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk);
+															const std::vector<std::vector<double>> &results,
+															lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
+															size_t rows, size_t columns, size_t samples_last_ciphertext,
+															size_t training_iterations,
+															const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk);
 
 /**
  * Perform LR Inference on CPU.
@@ -92,11 +101,10 @@ std::vector<iteration_time_t> logistic_regression_cpu_train(const std::vector<st
  * @return Iteration times.
  */
 std::vector<iteration_time_t> logistic_regression_cpu_inference(std::vector<std::vector<double>> &data,
-                                   const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                   size_t rows,
-                                   size_t columns,
-                                   size_t samples_last_ciphertext,
-                                   const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys);
+																const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
+																size_t rows, size_t columns,
+																size_t samples_last_ciphertext,
+																const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys);
 
 /**
  * Perform LR Training on CPU (with NAG).
@@ -110,13 +118,9 @@ std::vector<iteration_time_t> logistic_regression_cpu_inference(std::vector<std:
  * @param pk Public key.
  * @return Iteration times.
  */
-std::vector<iteration_time_t> logistic_regression_cpu_train_accelerated(const std::vector<std::vector<double>> &data,
-                                   const std::vector<std::vector<double>> &results,
-                                   lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                   size_t rows,
-                                   size_t columns,
-                                   size_t samples_last_ciphertext,
-                                   size_t training_iterations,
-                                   const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk);
+std::vector<iteration_time_t> logistic_regression_cpu_train_accelerated(
+		const std::vector<std::vector<double>> &data, const std::vector<std::vector<double>> &results,
+		lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights, size_t rows, size_t columns, size_t samples_last_ciphertext,
+		size_t training_iterations, const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk);
 
-#endif //FHE_HPP
+#endif // FHE_HPP

@@ -11,9 +11,8 @@
  * @param pk Public encryption key.
  * @return Equivalent vector of ciphertext that encrypts the matrix by row.
  */
-std::vector<lbcrypto::Ciphertext<lbcrypto::DCRTPoly> > encrypt_data(
-	const std::vector<std::vector<double> > &data,
-	const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk);
+std::vector<lbcrypto::Ciphertext<lbcrypto::DCRTPoly>> encrypt_data(const std::vector<std::vector<double>> &data,
+																   const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk);
 
 /**
  * Encrypt a vector of data.
@@ -22,7 +21,8 @@ std::vector<lbcrypto::Ciphertext<lbcrypto::DCRTPoly> > encrypt_data(
  * @return Ciphertext with the encrypted vector.
  */
 lbcrypto::Ciphertext<lbcrypto::DCRTPoly> encrypt_data(const std::vector<double> &data,
-													  const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk);
+													  const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk,
+													  const int scaleDegree, const int level);
 
 /**
  * Decrypt the given ciphertext.
@@ -30,7 +30,8 @@ lbcrypto::Ciphertext<lbcrypto::DCRTPoly> encrypt_data(const std::vector<double> 
  * @param sk Secret key.
  * @return Vector of decrypted data.
  */
-std::vector<double> decrypt_data(const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct, const lbcrypto::PrivateKey<lbcrypto::DCRTPoly> &sk);
+std::vector<double> decrypt_data(const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct,
+								 const lbcrypto::PrivateKey<lbcrypto::DCRTPoly> &sk);
 
 /**
  * Decrypt a matrix of data.
@@ -38,6 +39,7 @@ std::vector<double> decrypt_data(const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> 
  * @param sk Secret key.
  * @return Equivalent vector of ciphertext that decrypts the matrix by row.
  */
-std::vector<std::vector<double>> decrypt_data(const std::vector<lbcrypto::Ciphertext<lbcrypto::DCRTPoly>> &ct, const lbcrypto::PrivateKey<lbcrypto::DCRTPoly> &sk);
+std::vector<std::vector<double>> decrypt_data(const std::vector<lbcrypto::Ciphertext<lbcrypto::DCRTPoly>> &ct,
+											  const lbcrypto::PrivateKey<lbcrypto::DCRTPoly> &sk);
 
-#endif //CRYPT_HPP
+#endif // CRYPT_HPP

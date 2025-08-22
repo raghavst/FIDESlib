@@ -22,13 +22,6 @@ Limb<T>::~Limb() noexcept {
     aux.free(stream);
 }
 
-static Stream StartStream(int primeid, int LK) {
-    Stream s;
-    s.init(primeid, LK);
-    assert("Add parameter for creation only when its a main limb" == nullptr);
-    return s;
-}
-
 template <typename T>
 Limb<T>::Limb(Context& context, const int device, Stream& stream, const int primeid)
     : cc(context),
@@ -84,10 +77,10 @@ void Limb<T>::store(std::vector<T>& dat) const {
     dat.resize(v.size);
 
     //cudaHostRegister((void*)dat.data(), dat.size() * sizeof(T), cudaHostRegisterDefault);
-    cudaDeviceSynchronize();
     //cudaMemcpyAsync((void *) dat.data(), v.data, dat.size() * sizeof(T), cudaMemcpyDeviceToHost, stream.ptr);
 
-    cudaMemcpyAsync((void*)dat.data(), v.data, dat.size() * sizeof(T), cudaMemcpyDeviceToHost, 0);
+    cudaMemcpyAsync((void*)dat.data(), v.data, dat.size() * sizeof(T), cudaMemcpyDeviceToHost, stream.ptr);
+    cudaStreamSynchronize(stream.ptr);
     //cudaDeviceSynchronize();
     //cudaHostUnregister((void*)dat.data());
 }
@@ -96,7 +89,9 @@ template <typename T>
 template <typename Q>
 void Limb<T>::load(const std::vector<Q>& dat_) {
     assert(dat_.size() <= v.size);
-
+    int device = -1;
+    cudaGetDevice(&device);
+    // std::cout << v.device << " " << device << ",";
     std::vector<T> dat;
     if constexpr (!std::is_same<T, Q>().value) {
         dat.assign(v.size, 0);

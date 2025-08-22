@@ -1,0 +1,58 @@
+# Start with CUDA 12.5 base image
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+
+# RUN apt-key del 7fa2af80
+# RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+
+# Update and install dependencies
+RUN apt-get update && apt-get install -y \
+    gcc-11 \
+    g++-11 \
+    cmake \
+    wget \
+    git \
+    libtbb-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set GCC 11 as the default compiler
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
+
+# Install CMake 3.25 (or newer)
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.25.0/cmake-3.25.0-linux-x86_64.sh -q -O /tmp/cmake-install.sh \
+    && chmod u+x /tmp/cmake-install.sh \
+    && mkdir /opt/cmake-3.25.0 \
+    && /tmp/cmake-install.sh --skip-license --prefix=/opt/cmake-3.25.0 \
+    && rm /tmp/cmake-install.sh \
+    && ln -s /opt/cmake-3.25.0/bin/* /usr/local/bin
+
+# Install GoogleTest (optional)
+RUN git clone https://github.com/google/googletest.git /googletest \
+    && cd /googletest \
+    && mkdir build \
+    && cd build \
+    && cmake .. \
+    && make \
+    && make install \
+    && cd / \
+    && rm -rf /googletest
+
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+  && dpkg -i cuda-keyring_1.0-1_all.deb \
+  && apt update \
+  && apt install -y --allow-change-held-packages libnccl2 libnccl-dev 
+
+# Set working directory
+WORKDIR /app/
+
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+
+# Clone OpenFHE
+RUN git clone https://github.com/openfheorg/openfhe-development.git /app/openfhe
+
+# Set the default command (adjust as needed)
+CMD ["/bin/bash"]

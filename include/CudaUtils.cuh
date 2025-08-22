@@ -5,6 +5,8 @@
 #ifndef FIDESLIB_CUDAUTILS_CUH
 #define FIDESLIB_CUDAUTILS_CUH
 
+#define NCCL
+
 #include <cuda_runtime.h>
 #include <execinfo.h>
 #include <functional>
@@ -39,14 +41,28 @@ class CudaNvtxRange {
     }
 };
 
+int getNumDevices();
+
 void CudaHostSync();
-void breakpoint();
+inline void breakpoint() {}
 
 #define CudaCheckErrorMod                                                                    \
     do {                                                                                     \
         cudaDeviceSynchronize();                                                             \
         cudaError_t e = cudaGetLastError();                                                  \
-        if (e != cudaSuccess) {                                                              \
+        if (e != cudaSuccess && e != cudaErrorPeerAccessAlreadyEnabled) {                    \
+                                                                                             \
+            printf("Cuda failure %s:%d: '%s'\n", __FILE__, __LINE__, cudaGetErrorString(e)); \
+            FIDESlib::breakpoint();                                                          \
+            exit(0);                                                                         \
+        }                                                                                    \
+    } while (0)
+
+#define CudaCheckErrorModMGPU                                                                \
+    do {                                                                                     \
+        cudaStreamSynchronize(0);                                                            \
+        cudaError_t e = cudaGetLastError();                                                  \
+        if (e != cudaSuccess && e != cudaErrorPeerAccessAlreadyEnabled) {                    \
             printf("Cuda failure %s:%d: '%s'\n", __FILE__, __LINE__, cudaGetErrorString(e)); \
             FIDESlib::breakpoint();                                                          \
             exit(0);                                                                         \
@@ -56,7 +72,7 @@ void breakpoint();
 #define CudaCheckErrorModNoSync                                                              \
     do {                                                                                     \
         cudaError_t e = cudaGetLastError();                                                  \
-        if (e != cudaSuccess) {                                                              \
+        if (e != cudaSuccess && e != cudaErrorPeerAccessAlreadyEnabled) {                    \
             void* array[10];                                                                 \
             size_t size;                                                                     \
             size = backtrace(array, 10);                                                     \
@@ -65,6 +81,15 @@ void breakpoint();
             FIDESlib::breakpoint();                                                          \
             exit(0);                                                                         \
         }                                                                                    \
+    } while (0)
+
+#define NCCLCHECK(cmd)                                                                              \
+    do {                                                                                            \
+        ncclResult_t res = cmd;                                                                     \
+        if (res != ncclSuccess) {                                                                   \
+            printf("Failed, NCCL error %s:%d '%s'\n", __FILE__, __LINE__, ncclGetErrorString(res)); \
+            exit(EXIT_FAILURE);                                                                     \
+        }                                                                                           \
     } while (0)
 
 class Event;
@@ -77,7 +102,7 @@ class Stream {
     cudaEvent_t ev = nullptr;
     //Event ev;
 
-    void init(int primeid = 0, int LK = 64);
+    void init(int priority = 0);
 
     //void wait(const Event &ev) const;
     void wait(const Stream& s) const;

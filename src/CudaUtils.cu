@@ -7,7 +7,10 @@
 
 #include <iostream>
 #include <nvtx3/nvtx3.hpp>
+
 //#include "driver_types.h"
+
+#define DISABLE_STREAMS false
 
 namespace FIDESlib {
 
@@ -78,6 +81,12 @@ void CudaNvtxStop(const std::string msg, NVTX_CATEGORIES cat) {
         //nvtxRangePushEx(reinterpret_cast<const nvtxEventAttributes_t*>(&attr));
     }
 }
+
+int getNumDevices() {
+    int d;
+    cudaGetDeviceCount(&d);
+    return d;
+};
 
 void CudaHostSync() {
     cudaDeviceSynchronize();
@@ -157,29 +166,45 @@ void Stream::capture_end() {
 }
 
 void Stream::record() {
+    CudaCheckErrorModNoSync;
+#if !DISABLE_STREAMS
     //cudaEventDestroy(ev);
     //cudaEventCreate(&ev, cudaEventDisableTiming);
+    assert(ptr != nullptr);
+    assert(ev != nullptr);
     cudaEventRecord(ev, ptr);
+#endif
 }
 
 void Stream::wait_recorded(const Stream& s) const {
+
+    CudaCheckErrorModNoSync;
+#if !DISABLE_STREAMS
+    assert(ptr != nullptr);
+    assert(s.ptr != nullptr);
+    assert(ev != nullptr);
     cudaStreamWaitEvent(ptr, s.ev);
-    //this->wait(ev);
+//this->wait(ev);
+#endif
 }
 
 void Stream::wait(const Stream& s) const {
 
+    CudaCheckErrorModNoSync;
+#if !DISABLE_STREAMS
+    if (ptr == s.ptr)
+        return;
     assert(ptr != nullptr);
     assert(s.ptr != nullptr);
     assert(ev != nullptr);
-    CudaCheckErrorModNoSync;
     cudaEventRecord(ev, (s.ptr));
     cudaStreamWaitEvent(ptr, ev);
+#endif
 }
 
-void breakpoint() {}
-
-void Stream::init(int primeid, int LK) {
+int low = -1;
+int high = -1;
+void Stream::init(int priority) {
     if (ptr) {
         //free[ptr]++;
         cudaEventDestroy(ev);
@@ -187,14 +212,20 @@ void Stream::init(int primeid, int LK) {
         ptr = nullptr;
         ev = nullptr;
     }
-    //int low;
-    //int high;
-    //cudaDeviceGetStreamPriorityRange(&low, &high);
-    //int prio = low + ((high - low -1)* primeid)/ LK;
-    //cudaStreamCreateWithPriority(&ptr, cudaStreamNonBlocking, prio);
-    cudaStreamCreateWithFlags(&ptr, cudaStreamNonBlocking);
-    cudaEventCreate(&ev, cudaEventDisableTiming);
 
+#if !DISABLE_STREAMS
+    if (high == -1) {
+        cudaDeviceGetStreamPriorityRange(&low, &high);
+    }
+
+    int prio = low + priority * ((high - low - 1)) / 100;
+    cudaStreamCreateWithPriority(&ptr, cudaStreamNonBlocking, prio);
+    //cudaStreamCreateWithFlags(&ptr, cudaStreamNonBlocking);
+    cudaEventCreate(&ev, cudaEventDisableTiming);
+#else
+    ptr = nullptr;
+    ev = nullptr;
+#endif
     //free[ptr] = 0;
 }
 

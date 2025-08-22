@@ -3,10 +3,10 @@
 //
 #include <bit>
 #include <cassert>
+#include "CKKS/AccumulateBroadcast.cuh"
 #include "CKKS/Context.cuh"
 #include "CKKS/openfhe-interface/RawCiphertext.cuh"
 #include "Math.cuh"
-
 using namespace lbcrypto;
 
 /**
@@ -152,8 +152,7 @@ void FIDESlib::CKKS::GetOpenFHEPlaintext(lbcrypto::Plaintext result, RawPlainTex
 
     /*
     std::cout << result << std::endl;
-
-    bool ok = result->Decode();
+bool ok = result->Decode();
     std::cout << ok << " " << result << std::endl;
     */
 }
@@ -204,9 +203,15 @@ FIDESlib::CKKS::RawParams FIDESlib::CKKS::GetRawParams(lbcrypto::CryptoContext<l
         auto mapSearch = FFT::m_rootOfUnityReverseTableByModulus.find(result.moduli[i]);
         if (mapSearch == FFT::m_rootOfUnityReverseTableByModulus.end() ||
             mapSearch->second.GetLength() != (size_t)result.N /*CycloOrderHf*/) {
+            FFT().PreCompute(result.root_of_unity[i], result.N << 1, result.moduli[i]);
+        }
+
+        if (mapSearch == FFT::m_rootOfUnityReverseTableByModulus.end() ||
+            mapSearch->second.GetLength() != (size_t)result.N /*CycloOrderHf*/) {
             assert("OpenFHE has not generated the NTT tables we want yet :(" == nullptr);
-            //PreCompute(result.root_of_unity[i], result.N << 2, result.moduli[i]);
-        } else {
+        }
+
+        {
             int size = FFT::m_rootOfUnityReverseTableByModulus[result.moduli[i]].GetLength();
 
             for (int k = 0; k < size; ++k) {
@@ -412,7 +417,14 @@ FIDESlib::CKKS::RawKeySwitchKey FIDESlib::CKKS::GetRotationKeySwitchKey(
     if (keyMap.find(keys.secretKey->GetKeyTag()) != keyMap.end()) {
         auto& keyMap2 = keyMap[keys.secretKey->GetKeyTag()];
         uint32_t x = FIDESlib::modpow(5, index, cc->GetRingDimension() * 2);
-        if (keyMap2->find(x) != keyMap2->end()) {
+        if (keyMap2->find(x) == keyMap2->end()) {
+            cc->EvalAtIndexKeyGen(keys.secretKey, {index});
+            /*
+             assert("RotKey is not present for rotation !!!" == nullptr);
+                std::cout << "RotKey is not present for rotation " << index << "!!!" << std::endl;
+                */
+        }
+        {
             const auto& key = keyMap2->at(x);
             assert(key != nullptr);
             const auto ek = std::dynamic_pointer_cast<EvalKeyRelinImpl<DCRTPoly>>(key);
@@ -440,9 +452,6 @@ FIDESlib::CKKS::RawKeySwitchKey FIDESlib::CKKS::GetRotationKeySwitchKey(
                     b.push_back(v);
                 }
             */
-        } else {
-            assert("RotKey is not present for rotation !!!" == nullptr);
-            std::cout << "RotKey is not present for rotation " << index << "!!!" << std::endl;
         }
     } else {
         assert("RotKey is not present !!!" == nullptr);
@@ -500,375 +509,300 @@ FIDESlib::CKKS::RawKeySwitchKey FIDESlib::CKKS::GetConjugateKeySwitchKey(
 #include "CKKS/LimbPartition.cuh"
 #include "CKKS/RNSPoly.cuh"
 
-constexpr bool remove_extension = true;
+void FIDESlib::CKKS::GenAndAddRotationKeys(lbcrypto::CryptoContext<lbcrypto::DCRTPoly>& cc,
+                                           const KeyPair<lbcrypto::DCRTPoly>& keys, FIDESlib::CKKS::Context& GPUcc,
+                                           std::vector<int> indexes) {
+
+    cc->EvalAtIndexKeyGen(keys.secretKey, indexes);
+
+    for (int i : indexes) {
+        auto clave_rotacion = FIDESlib::CKKS::GetRotationKeySwitchKey(keys, i, cc);
+        FIDESlib::CKKS::KeySwitchingKey clave_rotacion_gpu(GPUcc);
+        clave_rotacion_gpu.Initialize(GPUcc, clave_rotacion);
+        GPUcc.AddRotationKey(i, std::move(clave_rotacion_gpu));
+    }
+}
+
+constexpr bool remove_extension = false;
 
 void FIDESlib::CKKS::AddBootstrapPrecomputation(lbcrypto::CryptoContext<lbcrypto::DCRTPoly> cc,
                                                 const KeyPair<lbcrypto::DCRTPoly>& keys, int slots,
                                                 FIDESlib::CKKS::Context& GPUcc) {
-    FIDESlib::CKKS::BootstrapPrecomputation result;
 
-    auto precom =
-        std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(cc->GetScheme()->m_FHE)->m_bootPrecomMap.find(slots)->second;
+    if (true /*!GPUcc.HasBootPrecomputation(slots)*/) {  // TODO manage more than one secret key
+        FIDESlib::CKKS::BootstrapPrecomputation result;
 
-    if (precom->m_paramsEnc[CKKS_BOOT_PARAMS::LEVEL_BUDGET] == 1 &&
-        precom->m_paramsDec[CKKS_BOOT_PARAMS::LEVEL_BUDGET] == 1) {
-        result.LT.slots = slots;
-        result.LT.bStep = (precom->m_dim1 == 0) ? ceil(sqrt(slots)) : precom->m_dim1;
+        auto precom = std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(cc->GetScheme()->m_FHE)
+                          ->m_bootPrecomMap.find(slots)
+                          ->second;
 
-        if (1) {  // extended limbs computation
-            auto auxA = precom->m_U0hatTPre;
-            auto auxInvA = precom->m_U0Pre;
+        if (precom->m_paramsEnc[CKKS_BOOT_PARAMS::LEVEL_BUDGET] == 1 &&
+            precom->m_paramsDec[CKKS_BOOT_PARAMS::LEVEL_BUDGET] == 1) {
+            result.LT.slots = slots;
+            result.LT.bStep = (precom->m_dim1 == 0) ? ceil(sqrt(slots)) : precom->m_dim1;
 
-            result.LT.A.clear();
-            for (int i = 0; i < auxA.size(); ++i) {
-                RawPlainText raw = GetRawPlainText(cc, auxA.at(i));
-                result.LT.A.emplace_back(GPUcc, raw);
-                if constexpr (remove_extension)
-                    result.LT.A.back().c0.freeSpecialLimbs();
-                if (0) {
-                    RawPlainText raw2;
-                    result.LT.A.back().store(raw2);
-                    lbcrypto::Plaintext pt = auxA.at(0);
-                    GetOpenFHEPlaintext(pt, raw2);
+            if constexpr (1) {  // extended limbs computation
+                auto auxA = precom->m_U0hatTPre;
+                auto auxInvA = precom->m_U0Pre;
+
+                result.LT.A.clear();
+                for (int i = 0; i < auxA.size(); ++i) {
+                    RawPlainText raw = GetRawPlainText(cc, auxA.at(i));
+                    result.LT.A.emplace_back(GPUcc, raw);
+                    if constexpr (remove_extension)
+                        result.LT.A.back().c0.freeSpecialLimbs();
                 }
 
-                // result.A.back().moddown();
-
-                if (0) {
-                    RawPlainText raw2;
-                    result.LT.A.back().store(raw2);
-                    lbcrypto::Plaintext pt = auxA.at(0);
-                    GetOpenFHEPlaintext(pt, raw2);
+                result.LT.invA.clear();
+                for (int i = 0; i < auxInvA.size(); ++i) {
+                    RawPlainText raw = GetRawPlainText(cc, auxInvA.at(i));
+                    result.LT.invA.emplace_back(GPUcc, raw);
+                    if constexpr (remove_extension)
+                        result.LT.invA.back().c0.freeSpecialLimbs();
                 }
             }
 
-            result.LT.invA.clear();
-            for (int i = 0; i < auxInvA.size(); ++i) {
-                RawPlainText raw = GetRawPlainText(cc, auxInvA.at(i));
-                result.LT.invA.emplace_back(GPUcc, raw);
-                if constexpr (remove_extension)
-                    result.LT.invA.back().c0.freeSpecialLimbs();
-                // result.invA.back().moddown();
+            for (int i = 1; i < result.LT.bStep; ++i) {
+                KeySwitchingKey ksk(GPUcc);
+                RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, i, cc);
+                ksk.Initialize(GPUcc, rksk);
+                GPUcc.AddRotationKey(i, std::move(ksk));
             }
+
+#if AFFINE_LT
+            KeySwitchingKey ksk(GPUcc);
+            RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, result.LT.bStep, cc);
+            ksk.Initialize(GPUcc, rksk);
+            GPUcc.AddRotationKey(result.LT.bStep, std::move(ksk));
+#else
+            for (int i = result.LT.bStep; i < result.LT.slots; i += result.LT.bStep) {
+                KeySwitchingKey ksk(GPUcc);
+                RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, i, cc);
+                ksk.Initialize(GPUcc, rksk);
+                GPUcc.AddRotationKey(i, std::move(ksk));
+            }
+#endif
         } else {
-            std::vector<lbcrypto::ConstPlaintext> auxA;
-            std::vector<lbcrypto::ConstPlaintext> auxInvA;
 
-            std::vector<std::vector<std::complex<double>>> U0(slots, std::vector<std::complex<double>>(slots));
-            std::vector<std::vector<std::complex<double>>> U1(slots, std::vector<std::complex<double>>(slots));
-            std::vector<std::vector<std::complex<double>>> U0hatT(slots, std::vector<std::complex<double>>(slots));
-            std::vector<std::vector<std::complex<double>>> U1hatT(slots, std::vector<std::complex<double>>(slots));
+            {  // CoeffToSlots metadata
+                uint32_t M = cc->GetCyclotomicOrder();
+                uint32_t N = cc->GetRingDimension();
+                int32_t levelBudget = precom->m_paramsEnc[CKKS_BOOT_PARAMS::LEVEL_BUDGET];
+                int32_t layersCollapse = precom->m_paramsEnc[CKKS_BOOT_PARAMS::LAYERS_COLL];
+                int32_t remCollapse = precom->m_paramsEnc[CKKS_BOOT_PARAMS::LAYERS_REM];
+                int32_t numRotations = precom->m_paramsEnc[CKKS_BOOT_PARAMS::NUM_ROTATIONS];
+                int32_t b = precom->m_paramsEnc[CKKS_BOOT_PARAMS::BABY_STEP];
+                int32_t g = precom->m_paramsEnc[CKKS_BOOT_PARAMS::GIANT_STEP];
+                int32_t numRotationsRem = precom->m_paramsEnc[CKKS_BOOT_PARAMS::NUM_ROTATIONS_REM];
+                int32_t bRem = precom->m_paramsEnc[CKKS_BOOT_PARAMS::BABY_STEP_REM];
+                int32_t gRem = precom->m_paramsEnc[CKKS_BOOT_PARAMS::GIANT_STEP_REM];
 
-            uint32_t m = 4 * slots;
-            bool isSparse = (2 * GPUcc.N != m) ? true : false;
+                int32_t stop = -1;
+                int32_t flagRem = 0;
 
-            // computes indices for all primitive roots of unity
-            std::vector<uint32_t> rotGroup(slots);
-            uint32_t fivePows = 1;
-            for (uint32_t i = 0; i < slots; ++i) {
-                rotGroup[i] = fivePows;
-                fivePows *= 5;
-                fivePows %= m;
+                auto algo = cc->GetScheme();
+
+                if (remCollapse != 0) {
+                    stop = 0;
+                    flagRem = 1;
+                }
+
+                // precompute the inner and outer rotations
+                result.CtS.resize(levelBudget);
+                for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
+                    if (flagRem == 1 && i == 0) {
+                        // remainder corresponds to index 0 in encoding and to last index in decoding
+                        result.CtS[i].bStep = gRem;
+                        result.CtS[i].gStep = bRem;
+                        result.CtS[i].slots = numRotationsRem;
+                        result.CtS[i].rotIn.resize(numRotationsRem + 1);
+                    } else {
+                        result.CtS[i].bStep = g;
+                        result.CtS[i].gStep = b;
+                        result.CtS[i].slots = numRotations;
+                        result.CtS[i].rotIn.resize(numRotations + 1);
+                    }
+                }
+
+                for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
+                    result.CtS[i].rotOut.resize(std::max(2, std::max(b, bRem)));
+                }
+
+                for (int32_t s = levelBudget - 1; s > stop; s--) {
+                    for (int32_t j = 0; j < g; j++) {
+                        result.CtS[s].rotIn[j] =
+                            ReduceRotation((j - int32_t((numRotations + 1) / 2) + 1) *
+                                               (1 << ((s - flagRem) * layersCollapse + remCollapse)),
+                                           slots);
+                    }
+
+                    for (int32_t i = 0; i < b; i++) {
+                        result.CtS[s].rotOut[i] =
+                            ReduceRotation((g * i) * (1 << ((s - flagRem) * layersCollapse + remCollapse)), M / 4);
+                    }
+                }
+
+                if (flagRem) {
+                    for (int32_t j = 0; j < gRem; j++) {
+                        result.CtS[stop].rotIn[j] = ReduceRotation((j - int32_t((numRotationsRem + 1) / 2) + 1), slots);
+                    }
+
+                    for (int32_t i = 0; i < bRem; i++) {
+                        result.CtS[stop].rotOut[i] = ReduceRotation((gRem * i), M / 4);
+                    }
+                }
+
+                std::cout << g << " " << b << " " << gRem << " " << bRem << std::endl;
+            }
+            {  // SlotToCoeff metadata
+                uint32_t M = cc->GetCyclotomicOrder();
+                uint32_t N = cc->GetRingDimension();
+
+                int32_t levelBudget = precom->m_paramsDec[CKKS_BOOT_PARAMS::LEVEL_BUDGET];
+                int32_t layersCollapse = precom->m_paramsDec[CKKS_BOOT_PARAMS::LAYERS_COLL];
+                int32_t remCollapse = precom->m_paramsDec[CKKS_BOOT_PARAMS::LAYERS_REM];
+                int32_t numRotations = precom->m_paramsDec[CKKS_BOOT_PARAMS::NUM_ROTATIONS];
+                int32_t b = precom->m_paramsDec[CKKS_BOOT_PARAMS::BABY_STEP];
+                int32_t g = precom->m_paramsDec[CKKS_BOOT_PARAMS::GIANT_STEP];
+                int32_t numRotationsRem = precom->m_paramsDec[CKKS_BOOT_PARAMS::NUM_ROTATIONS_REM];
+                int32_t bRem = precom->m_paramsDec[CKKS_BOOT_PARAMS::BABY_STEP_REM];
+                int32_t gRem = precom->m_paramsDec[CKKS_BOOT_PARAMS::GIANT_STEP_REM];
+
+                auto algo = cc->GetScheme();
+
+                int32_t flagRem = 0;
+
+                if (remCollapse != 0) {
+                    flagRem = 1;
+                }
+
+                // precompute the inner and outer rotations
+
+                result.StC.resize(levelBudget);
+                for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
+
+                    if (flagRem == 1 && i == uint32_t(levelBudget - 1)) {
+                        // remainder corresponds to index 0 in encoding and to last index in decoding
+                        result.StC[i].bStep = gRem;
+                        result.StC[i].gStep = bRem;
+                        result.StC[i].slots = numRotationsRem;
+                        result.StC[i].rotIn.resize(numRotationsRem + 1);
+                    } else {
+                        result.StC[i].bStep = g;
+                        result.StC[i].gStep = b;
+                        result.StC[i].slots = numRotations;
+                        result.StC[i].rotIn.resize(numRotations + 1);
+                    }
+                }
+
+                for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
+                    result.StC.at(i).rotOut.resize(b + bRem);
+                }
+
+                for (int32_t s = 0; s < levelBudget - flagRem; s++) {
+                    for (int32_t j = 0; j < g; j++) {
+                        result.StC.at(s).rotIn.at(j) = ReduceRotation(
+                            (j - int32_t((numRotations + 1) / 2) + 1) * (1 << (s * layersCollapse)), M / 4);
+                    }
+
+                    for (int32_t i = 0; i < b; i++) {
+                        result.StC.at(s).rotOut.at(i) = ReduceRotation((g * i) * (1 << (s * layersCollapse)), M / 4);
+                    }
+                }
+
+                if (flagRem) {
+                    int32_t s = levelBudget - flagRem;
+                    for (int32_t j = 0; j < gRem; j++) {
+                        result.StC.at(s).rotIn.at(j) = ReduceRotation(
+                            (j - int32_t((numRotationsRem + 1) / 2) + 1) * (1 << (s * layersCollapse)), M / 4);
+                    }
+
+                    for (int32_t i = 0; i < bRem; i++) {
+                        result.StC.at(s).rotOut.at(i) = ReduceRotation((gRem * i) * (1 << (s * layersCollapse)), M / 4);
+                    }
+                }
+
+                std::cout << g << " " << b << " " << gRem << " " << bRem << std::endl;
             }
 
-            // computes all powers of a primitive root of unity exp(2 * M_PI/m)
-            std::vector<std::complex<double>> ksiPows(m + 1);
-            for (uint32_t j = 0; j < m; ++j) {
-                double angle = 2.0 * M_PI * j / m;
-                ksiPows[j].real(cos(angle));
-                ksiPows[j].imag(sin(angle));
-            }
-            ksiPows[m] = ksiPows[0];
+            auto& A = precom->m_U0hatTPreFFT;
+            auto& invA = precom->m_U0PreFFT;
 
-            for (size_t i = 0; i < slots; i++) {
-                for (size_t j = 0; j < slots; j++) {
-                    U0[i][j] = ksiPows[(j * rotGroup[i]) % m];
-                    U0hatT[j][i] = std::conj(U0[i][j]);
-                    U1[i][j] = std::complex<double>(0, 1) * U0[i][j];
-                    U1hatT[j][i] = std::conj(U1[i][j]);
+            for (int i = 0; i < A.size(); ++i) {
+                for (int j = 0; j < A.at(i).size(); ++j) {
+                    RawPlainText raw = GetRawPlainText(cc, A.at(i).at(j));
+                    result.CtS.at(i).A.emplace_back(GPUcc, raw);
+                    if constexpr (remove_extension)
+                        result.CtS.at(i).A.back().c0.freeSpecialLimbs();
+                    CudaCheckErrorMod;
                 }
             }
 
-            NativeInteger q =
-                cc->GetCryptoParameters()->GetElementParams()->GetParams()[0]->GetModulus().ConvertToInt();
-            double qDouble = q.ConvertToDouble();
-
-            uint128_t factor = ((uint128_t)1 << ((uint32_t)std::round(std::log2(qDouble))));
-            double pre = qDouble / factor;
-            double k = (std::dynamic_pointer_cast<lbcrypto::CryptoParametersCKKSRNS>(cc->GetCryptoParameters())
-                            ->GetSecretKeyDist() == SPARSE_TERNARY)
-                           ? std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(cc->GetScheme()->m_FHE)->K_SPARSE
-                           : 1.0;
-            double scaleEnc = pre / k;
-            double scaleDec = 1 / pre;
-
-            uint32_t L0 = cc->GetCryptoParameters()->GetElementParams()->GetParams().size();
-            // for FLEXIBLEAUTOEXT we do not need extra modulus in auxiliary plaintexts
-            if (std::dynamic_pointer_cast<lbcrypto::CryptoParametersCKKSRNS>(cc->GetCryptoParameters())
-                    ->GetScalingTechnique() == FLEXIBLEAUTOEXT)
-                L0 -= 1;
-            uint32_t lEnc = L0 - precom->m_paramsEnc[CKKS_BOOT_PARAMS::LEVEL_BUDGET] - 1;
-            uint32_t approxModDepth =
-                std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(cc->GetScheme()->m_FHE)
-                    ->GetModDepthInternal(
-                        std::dynamic_pointer_cast<lbcrypto::CryptoParametersCKKSRNS>(cc->GetCryptoParameters())
-                            ->GetSecretKeyDist());
-            uint32_t depthBT = approxModDepth + precom->m_paramsEnc[CKKS_BOOT_PARAMS::LEVEL_BUDGET] +
-                               precom->m_paramsDec[CKKS_BOOT_PARAMS::LEVEL_BUDGET];
-            uint32_t lDec = L0 - depthBT;
-
-            std::shared_ptr<FHECKKSRNS> fhe = std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(cc->GetScheme()->m_FHE);
-
-            if (!isSparse) {
-                auxA = fhe->EvalLinearTransformPrecompute(*cc, U0hatT, scaleEnc, lEnc, false);
-                auxInvA = fhe->EvalLinearTransformPrecompute(*cc, U0, scaleDec, lDec, false);
-            } else {
-                auxA = fhe->EvalLinearTransformPrecompute(*cc, U0hatT, U1hatT, 0, scaleEnc, lEnc, false);
-                auxInvA = fhe->EvalLinearTransformPrecompute(*cc, U0, U1, 1, scaleDec, lDec, false);
+            for (int i = 0; i < invA.size(); ++i) {
+                for (int j = 0; j < invA.at(i).size(); ++j) {
+                    RawPlainText raw = GetRawPlainText(cc, invA.at(i).at(j));
+                    result.StC.at(i).A.emplace_back(GPUcc, raw);
+                    if constexpr (remove_extension)
+                        result.StC.at(i).A.back().c0.freeSpecialLimbs();
+                }
             }
 
-            result.LT.A.clear();
-            for (int i = 0; i < auxA.size(); ++i) {
-                RawPlainText raw = GetRawPlainText(cc, auxA.at(i));
-                result.LT.A.emplace_back(GPUcc, raw);
+            for (auto& v : {&result.CtS, &result.StC}) {
+                for (auto& i : *v) {
+                    for (auto& j : i.rotIn) {
+                        if (j && !GPUcc.HasRotationKey(j)) {
+                            KeySwitchingKey ksk(GPUcc);
+                            RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j, cc);
+                            ksk.Initialize(GPUcc, rksk);
+                            GPUcc.AddRotationKey(j, std::move(ksk));
+                        }
+                    }
+
+#if AFFINE_LT
+                    for (auto& j : {i.rotOut[0], i.rotOut.size() > 1 ? i.rotOut[1] - i.rotOut[0] : 0}) {
+                        if (j && !GPUcc.HasRotationKey(j)) {
+                            KeySwitchingKey ksk(GPUcc);
+                            RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j, cc);
+                            ksk.Initialize(GPUcc, rksk);
+                            GPUcc.AddRotationKey(j, std::move(ksk));
+                        }
+                    }
+#else
+                    for (auto& j : i.rotOut) {
+                        if (j && !GPUcc.HasRotationKey(j)) {
+                            KeySwitchingKey ksk(GPUcc);
+                            RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j, cc);
+                            ksk.Initialize(GPUcc, rksk);
+                            GPUcc.AddRotationKey(j, std::move(ksk));
+                        }
+                    }
+#endif
+                }
             }
 
-            result.LT.invA.clear();
-            for (int i = 0; i < auxInvA.size(); ++i) {
-                RawPlainText raw = GetRawPlainText(cc, auxInvA.at(i));
-                result.LT.invA.emplace_back(GPUcc, raw);
+            std::reverse(result.CtS.begin(), result.CtS.end());
+        }
+
+        if (GPUcc.N / 2 != slots) {
+            int bStep = 4;
+            result.accumulate_bStep = bStep;
+            std::vector<int> rotations = GetAccumulateRotationIndices(bStep, slots, GPUcc.N / 2 / slots);
+            for (auto idx : rotations) {
+                KeySwitchingKey ksk(GPUcc);
+                RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, idx, cc);
+                ksk.Initialize(GPUcc, rksk);
+                GPUcc.AddRotationKey(idx, std::move(ksk));
             }
         }
 
-        for (int i = 1; i < result.LT.bStep; ++i) {
-            KeySwitchingKey ksk(GPUcc);
-            RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, i, cc);
-            ksk.Initialize(GPUcc, rksk);
-            GPUcc.AddRotationKey(i, std::move(ksk));
-        }
+        KeySwitchingKey ksk(GPUcc);
+        RawKeySwitchKey rksk = GetConjugateKeySwitchKey(keys, cc);
+        ksk.Initialize(GPUcc, rksk);
+        GPUcc.AddRotationKey(GPUcc.N * 2 - 1, std::move(ksk));
 
-        for (int i = result.LT.bStep; i < result.LT.slots; i += result.LT.bStep) {
-            KeySwitchingKey ksk(GPUcc);
-            RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, i, cc);
-            ksk.Initialize(GPUcc, rksk);
-            GPUcc.AddRotationKey(i, std::move(ksk));
-        }
-    } else {
+        result.correctionFactor =
+            std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(cc->GetScheme()->m_FHE)->m_correctionFactor;
 
-        {  // CoeffToSlots metadata
-            uint32_t M = cc->GetCyclotomicOrder();
-            uint32_t N = cc->GetRingDimension();
-            int32_t levelBudget = precom->m_paramsEnc[CKKS_BOOT_PARAMS::LEVEL_BUDGET];
-            int32_t layersCollapse = precom->m_paramsEnc[CKKS_BOOT_PARAMS::LAYERS_COLL];
-            int32_t remCollapse = precom->m_paramsEnc[CKKS_BOOT_PARAMS::LAYERS_REM];
-            int32_t numRotations = precom->m_paramsEnc[CKKS_BOOT_PARAMS::NUM_ROTATIONS];
-            int32_t b = precom->m_paramsEnc[CKKS_BOOT_PARAMS::BABY_STEP];
-            int32_t g = precom->m_paramsEnc[CKKS_BOOT_PARAMS::GIANT_STEP];
-            int32_t numRotationsRem = precom->m_paramsEnc[CKKS_BOOT_PARAMS::NUM_ROTATIONS_REM];
-            int32_t bRem = precom->m_paramsEnc[CKKS_BOOT_PARAMS::BABY_STEP_REM];
-            int32_t gRem = precom->m_paramsEnc[CKKS_BOOT_PARAMS::GIANT_STEP_REM];
-
-            int32_t stop = -1;
-            int32_t flagRem = 0;
-
-            auto algo = cc->GetScheme();
-
-            if (remCollapse != 0) {
-                stop = 0;
-                flagRem = 1;
-            }
-
-            // precompute the inner and outer rotations
-            result.CtS.resize(levelBudget);
-            for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
-                if (flagRem == 1 && i == 0) {
-                    // remainder corresponds to index 0 in encoding and to last index in decoding
-                    result.CtS[i].bStep = gRem;
-                    result.CtS[i].gStep = bRem;
-                    result.CtS[i].slots = numRotationsRem;
-                    result.CtS[i].rotIn.resize(numRotationsRem + 1);
-                } else {
-                    result.CtS[i].bStep = g;
-                    result.CtS[i].gStep = b;
-                    result.CtS[i].slots = numRotations;
-                    result.CtS[i].rotIn.resize(numRotations + 1);
-                }
-            }
-
-            for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
-                result.CtS[i].rotOut.resize(b + bRem);
-            }
-
-            for (int32_t s = levelBudget - 1; s > stop; s--) {
-                for (int32_t j = 0; j < g; j++) {
-                    result.CtS[s].rotIn[j] = ReduceRotation((j - int32_t((numRotations + 1) / 2) + 1) *
-                                                                (1 << ((s - flagRem) * layersCollapse + remCollapse)),
-                                                            slots);
-                }
-
-                for (int32_t i = 0; i < b; i++) {
-                    result.CtS[s].rotOut[i] =
-                        ReduceRotation((g * i) * (1 << ((s - flagRem) * layersCollapse + remCollapse)), M / 4);
-                }
-            }
-
-            if (flagRem) {
-                for (int32_t j = 0; j < gRem; j++) {
-                    result.CtS[stop].rotIn[j] = ReduceRotation((j - int32_t((numRotationsRem + 1) / 2) + 1), slots);
-                }
-
-                for (int32_t i = 0; i < bRem; i++) {
-                    result.CtS[stop].rotOut[i] = ReduceRotation((gRem * i), M / 4);
-                }
-            }
-        }
-        {  // SlotToCoeff metadata
-            uint32_t M = cc->GetCyclotomicOrder();
-            uint32_t N = cc->GetRingDimension();
-
-            int32_t levelBudget = precom->m_paramsDec[CKKS_BOOT_PARAMS::LEVEL_BUDGET];
-            int32_t layersCollapse = precom->m_paramsDec[CKKS_BOOT_PARAMS::LAYERS_COLL];
-            int32_t remCollapse = precom->m_paramsDec[CKKS_BOOT_PARAMS::LAYERS_REM];
-            int32_t numRotations = precom->m_paramsDec[CKKS_BOOT_PARAMS::NUM_ROTATIONS];
-            int32_t b = precom->m_paramsDec[CKKS_BOOT_PARAMS::BABY_STEP];
-            int32_t g = precom->m_paramsDec[CKKS_BOOT_PARAMS::GIANT_STEP];
-            int32_t numRotationsRem = precom->m_paramsDec[CKKS_BOOT_PARAMS::NUM_ROTATIONS_REM];
-            int32_t bRem = precom->m_paramsDec[CKKS_BOOT_PARAMS::BABY_STEP_REM];
-            int32_t gRem = precom->m_paramsDec[CKKS_BOOT_PARAMS::GIANT_STEP_REM];
-
-            auto algo = cc->GetScheme();
-
-            int32_t flagRem = 0;
-
-            if (remCollapse != 0) {
-                flagRem = 1;
-            }
-
-            // precompute the inner and outer rotations
-
-            result.StC.resize(levelBudget);
-            for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
-
-                if (flagRem == 1 && i == uint32_t(levelBudget - 1)) {
-                    // remainder corresponds to index 0 in encoding and to last index in decoding
-                    result.StC[i].bStep = gRem;
-                    result.StC[i].gStep = bRem;
-                    result.StC[i].slots = numRotationsRem;
-                    result.StC[i].rotIn.resize(numRotationsRem + 1);
-                } else {
-                    result.StC[i].bStep = g;
-                    result.StC[i].gStep = b;
-                    result.StC[i].slots = numRotations;
-                    result.StC[i].rotIn.resize(numRotations + 1);
-                }
-            }
-
-            for (uint32_t i = 0; i < uint32_t(levelBudget); i++) {
-                result.StC.at(i).rotOut.resize(b + bRem);
-            }
-
-            for (int32_t s = 0; s < levelBudget - flagRem; s++) {
-                for (int32_t j = 0; j < g; j++) {
-                    result.StC.at(s).rotIn.at(j) =
-                        ReduceRotation((j - int32_t((numRotations + 1) / 2) + 1) * (1 << (s * layersCollapse)), M / 4);
-                }
-
-                for (int32_t i = 0; i < b; i++) {
-                    result.StC.at(s).rotOut.at(i) = ReduceRotation((g * i) * (1 << (s * layersCollapse)), M / 4);
-                }
-            }
-
-            if (flagRem) {
-                int32_t s = levelBudget - flagRem;
-                for (int32_t j = 0; j < gRem; j++) {
-                    result.StC.at(s).rotIn.at(j) = ReduceRotation(
-                        (j - int32_t((numRotationsRem + 1) / 2) + 1) * (1 << (s * layersCollapse)), M / 4);
-                }
-
-                for (int32_t i = 0; i < bRem; i++) {
-                    result.StC.at(s).rotOut.at(i) = ReduceRotation((gRem * i) * (1 << (s * layersCollapse)), M / 4);
-                }
-            }
-        }
-
-        auto& A = precom->m_U0hatTPreFFT;
-        auto& invA = precom->m_U0PreFFT;
-
-        for (int i = 0; i < A.size(); ++i) {
-            for (int j = 0; j < A.at(i).size(); ++j) {
-                RawPlainText raw = GetRawPlainText(cc, A.at(i).at(j));
-                result.CtS.at(i).A.emplace_back(GPUcc, raw);
-                if constexpr (remove_extension)
-                    result.CtS.at(i).A.back().c0.freeSpecialLimbs();
-                CudaCheckErrorMod;
-            }
-        }
-
-        for (int i = 0; i < invA.size(); ++i) {
-            for (int j = 0; j < invA.at(i).size(); ++j) {
-                RawPlainText raw = GetRawPlainText(cc, invA.at(i).at(j));
-                result.StC.at(i).A.emplace_back(GPUcc, raw);
-                if constexpr (remove_extension)
-                    result.StC.at(i).A.back().c0.freeSpecialLimbs();
-            }
-        }
-
-        for (auto& i : result.StC) {
-            for (auto& j : i.rotIn) {
-                if (j && !GPUcc.HasRotationKey(j)) {
-                    KeySwitchingKey ksk(GPUcc);
-                    RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j, cc);
-                    ksk.Initialize(GPUcc, rksk);
-                    GPUcc.AddRotationKey(j, std::move(ksk));
-                }
-            }
-            for (auto& j : i.rotOut) {
-                if (j && !GPUcc.HasRotationKey(j)) {
-                    KeySwitchingKey ksk(GPUcc);
-                    RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j, cc);
-                    ksk.Initialize(GPUcc, rksk);
-                    GPUcc.AddRotationKey(j, std::move(ksk));
-                }
-            }
-        }
-
-        for (auto& i : result.CtS) {
-            for (auto& j : i.rotIn) {
-                if (j && !GPUcc.HasRotationKey(j)) {
-                    KeySwitchingKey ksk(GPUcc);
-                    RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j, cc);
-                    ksk.Initialize(GPUcc, rksk);
-                    GPUcc.AddRotationKey(j, std::move(ksk));
-                }
-            }
-            for (auto& j : i.rotOut) {
-                if (j && !GPUcc.HasRotationKey(j)) {
-                    KeySwitchingKey ksk(GPUcc);
-                    RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j, cc);
-                    ksk.Initialize(GPUcc, rksk);
-                    GPUcc.AddRotationKey(j, std::move(ksk));
-                }
-            }
-        }
-        std::reverse(result.CtS.begin(), result.CtS.end());
+        GPUcc.AddBootPrecomputation(slots, std::move(result));
     }
-
-    if (GPUcc.N / 2 != slots) {
-        for (uint32_t j = 1; j < GPUcc.N / (2 * slots); j <<= 1) {
-            KeySwitchingKey ksk(GPUcc);
-            RawKeySwitchKey rksk = GetRotationKeySwitchKey(keys, j * slots, cc);
-            ksk.Initialize(GPUcc, rksk);
-            GPUcc.AddRotationKey(j * slots, std::move(ksk));
-        }
-    }
-
-    KeySwitchingKey ksk(GPUcc);
-    RawKeySwitchKey rksk = GetConjugateKeySwitchKey(keys, cc);
-    ksk.Initialize(GPUcc, rksk);
-    GPUcc.AddRotationKey(GPUcc.N * 2 - 1, std::move(ksk));
-
-    result.correctionFactor =
-        std::dynamic_pointer_cast<lbcrypto::FHECKKSRNS>(cc->GetScheme()->m_FHE)->m_correctionFactor;
-
-    GPUcc.AddBootPrecomputation(slots, std::move(result));
 }

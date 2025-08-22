@@ -44,11 +44,11 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyRescaleContextLimbCount)(benchmark::S
     for (int i = 0; i < devcount; ++i)
         GPUs.push_back(i);
 
-    fideslibParams.batch = state.range(1);
+    fideslibParams.batch = state.range(2);
     FIDESlib::CKKS::Context cc{fideslibParams, GPUs};
-    state.counters["p_batch"] = state.range(1);
+    state.counters["p_batch"] = state.range(2);
     CudaCheckErrorMod;
-    FIDESlib::CKKS::RNSPoly a(cc, cc.L);
+    FIDESlib::CKKS::RNSPoly a(cc, cc.L - state.range(3));
     for (auto _ : state) {
         auto start = std::chrono::high_resolution_clock::now();
         a.rescale();
@@ -63,10 +63,10 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyRescaleContextLimbCount)(benchmark::S
 }
 
 BENCHMARK_REGISTER_F(FIDESlibFixture, RNSPolyRescale)
-    ->ArgsProduct({{2, 3, 4, 5}, {1, 8, 16}, BATCH_CONFIG})
+    ->ArgsProduct({PARAMETERS, {0}, BATCH_CONFIG, LEVEL_CONFIG})
     ->UseManualTime();
 BENCHMARK_REGISTER_F(FIDESlibFixture, RNSPolyRescaleContextLimbCount)
-    ->ArgsProduct({{2, 3, 4, 5}, BATCH_CONFIG})
+    ->ArgsProduct({PARAMETERS, {0}, BATCH_CONFIG})
     ->UseManualTime();
 
 }  // namespace FIDESlib::Benchmarks

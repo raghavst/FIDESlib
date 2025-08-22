@@ -6,7 +6,7 @@
 #define FIDESLIB_NTT_CUH
 
 #include <cinttypes>
-#include "ModMult.cuh"
+#include "CKKS/forwardDefs.cuh"
 
 namespace FIDESlib {
 
@@ -46,8 +46,8 @@ __global__ void NTT_(T* __restrict__ dat, const int __grid_constant__ primeid, T
 
 template <bool second, ALGO algo, NTT_MODE mode>
 __global__ void NTT_(void** __restrict__ dat, const int __grid_constant__ primeid_init, void** __restrict__ res,
-                     void** __restrict__ pt, const int __grid_constant__ primeid_rescale, void** __restrict__ res2,
-                     void** __restrict__ kskb);
+                     void** __restrict__ pt = nullptr, const int __grid_constant__ primeid_rescale = -1,
+                     void** __restrict__ res2 = nullptr, void** __restrict__ kskb = nullptr);
 
 // ------------------------------------- 1D NTT version ----------------------------------------
 

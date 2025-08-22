@@ -5,6 +5,7 @@
 #include "crypt.hpp"
 #include "data.hpp"
 
+
 /**
  * Global OpenFHE context.
  */
@@ -27,8 +28,8 @@ lbcrypto::Ciphertext<lbcrypto::DCRTPoly> phi = nullptr;
 lbcrypto::Ciphertext<lbcrypto::DCRTPoly> phi_prev = nullptr;
 
 /**
-* Do bootstrapping every 2 iterations
-*/
+ * Do bootstrapping every 2 iterations
+ */
 bool bootstrap_every_two = false;
 
 /**
@@ -38,93 +39,99 @@ size_t activation_function = 1;
 
 void create_cpu_context(bool accelerated, bool inference) {
 
-    // Parameter selection.
-    constexpr uint32_t scale_mod_size = 59;
-    constexpr uint32_t first_mod = 60;
-    constexpr uint32_t num_large_digits = 3;
+	// Parameter selection.
+	uint32_t scale_mod_size = bootstrap_every_two ? 50 : 54;
+	uint32_t first_mod = bootstrap_every_two ? 55 : 60;
+	uint32_t num_large_digits = bootstrap_every_two ? 5 : 3;
 
-    lbcrypto::CCParams<lbcrypto::CryptoContextCKKSRNS> parameters;
-    parameters.SetScalingModSize(scale_mod_size);
+	lbcrypto::CCParams<lbcrypto::CryptoContextCKKSRNS> parameters;
+	parameters.SetScalingModSize(scale_mod_size);
 	parameters.SetFirstModSize(first_mod);
-    parameters.SetRingDim(ring_dim);
-    parameters.SetBatchSize(num_slots); 
-    parameters.SetSecurityLevel(lbcrypto::HEStd_NotSet);
-    parameters.SetScalingTechnique(lbcrypto::FLEXIBLEAUTO);
-    parameters.SetKeySwitchTechnique(lbcrypto::HYBRID);
-    parameters.SetSecretKeyDist(lbcrypto::UNIFORM_TERNARY);
-    parameters.SetNumLargeDigits(num_large_digits);
+	parameters.SetRingDim(ring_dim);
+	parameters.SetBatchSize(num_slots);
+	parameters.SetSecurityLevel(lbcrypto::HEStd_NotSet);
+	parameters.SetScalingTechnique(lbcrypto::FLEXIBLEAUTO);
+	parameters.SetKeySwitchTechnique(lbcrypto::HYBRID);
+	parameters.SetSecretKeyDist(lbcrypto::UNIFORM_TERNARY);
+	parameters.SetNumLargeDigits(num_large_digits);
 
-    // Bootstrapping parameters.
-    uint32_t levelsAvailableAfterBootstrap;
-    if (bootstrap_every_two && !inference) levelsAvailableAfterBootstrap = accelerated ? 11 : 9;
-    else levelsAvailableAfterBootstrap = accelerated ? 6 : 5;
-    const usint depth = levelsAvailableAfterBootstrap + lbcrypto::FHECKKSRNS::GetBootstrapDepth(level_budget, parameters.GetSecretKeyDist());
-    parameters.SetMultiplicativeDepth(depth);
+	// Bootstrapping parameters.
+	uint32_t levelsAvailableAfterBootstrap;
+	if (bootstrap_every_two && !inference)
+		levelsAvailableAfterBootstrap = accelerated ? 11 : (9 - prescale);
+	else
+		levelsAvailableAfterBootstrap = accelerated ? 6 : (5 - prescale);
+	const usint depth = levelsAvailableAfterBootstrap +
+						lbcrypto::FHECKKSRNS::GetBootstrapDepth(level_budget, parameters.GetSecretKeyDist());
+	parameters.SetMultiplicativeDepth(depth);
 
-    std::cout << "Multiplicative depth of " << parameters.GetMultiplicativeDepth() << std::endl;
+	std::cout << "Multiplicative depth of " << parameters.GetMultiplicativeDepth() << std::endl;
 
-    // Context creation.
-    const lbcrypto::CryptoContext<lbcrypto::DCRTPoly> cc = GenCryptoContext(parameters);
-    cc->Enable(lbcrypto::FHE);
-    cc->Enable(lbcrypto::PKE);
-    cc->Enable(lbcrypto::LEVELEDSHE);
-    cc->Enable(lbcrypto::KEYSWITCH);
-    cc->Enable(lbcrypto::ADVANCEDSHE);
+	// Context creation.
+	const lbcrypto::CryptoContext<lbcrypto::DCRTPoly> cc = GenCryptoContext(parameters);
+	cc->Enable(lbcrypto::FHE);
+	cc->Enable(lbcrypto::PKE);
+	cc->Enable(lbcrypto::LEVELEDSHE);
+	cc->Enable(lbcrypto::KEYSWITCH);
+	cc->Enable(lbcrypto::ADVANCEDSHE);
 
-    if (cc_cpu != nullptr) {
-        lbcrypto::CryptoContextImpl<lbcrypto::DCRTPolyImpl<bigintdyn::mubintvec<bigintdyn::ubint<unsigned long>>>>::ClearEvalAutomorphismKeys();
-        lbcrypto::CryptoContextImpl<lbcrypto::DCRTPolyImpl<bigintdyn::mubintvec<bigintdyn::ubint<unsigned long>>>>::ClearEvalMultKeys();
-        lbcrypto::CryptoContextImpl<lbcrypto::DCRTPolyImpl<bigintdyn::mubintvec<bigintdyn::ubint<unsigned long>>>>::ClearEvalSumKeys();
-    }
-    cc_cpu = cc;
+	if (cc_cpu != nullptr) {
+		lbcrypto::CryptoContextImpl<lbcrypto::DCRTPolyImpl<bigintdyn::mubintvec<bigintdyn::ubint<unsigned long>>>>::
+				ClearEvalAutomorphismKeys();
+		lbcrypto::CryptoContextImpl<
+				lbcrypto::DCRTPolyImpl<bigintdyn::mubintvec<bigintdyn::ubint<unsigned long>>>>::ClearEvalMultKeys();
+		lbcrypto::CryptoContextImpl<
+				lbcrypto::DCRTPolyImpl<bigintdyn::mubintvec<bigintdyn::ubint<unsigned long>>>>::ClearEvalSumKeys();
+	}
+	cc_cpu = cc;
 }
 
-void prepare_cpu_context(const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys, const size_t matrix_cols, const size_t matrix_rows) {
-    // Safety check
-    if (matrix_cols*matrix_rows != num_slots) {
-        std::cerr << "Matrix size is different from number of slots" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-    // Multiplication keys.
-    cc_cpu->EvalMultKeyGen(keys.secretKey);
-    // Rotation keys for same row value propagation and accumulation by rows and columns.
-    std::vector<int> col_rot_idx;
-    for (size_t j = 1; j < matrix_cols; j <<= 1) {
-        col_rot_idx.push_back(static_cast<int>(j));
-        col_rot_idx.push_back(-static_cast<int>(j));
-    }
-    for (size_t i = matrix_cols; i < matrix_cols*matrix_rows; i <<= 1) {
-        col_rot_idx.push_back(static_cast<int>(i));
-    }
-    cc_cpu->EvalRotateKeyGen(keys.secretKey, col_rot_idx);
-    // First column matrix mask creation.
-    auto naive_1st_col_mask = std::vector<double>(matrix_cols*matrix_rows, 0);
-    auto naive_1st_col_mask_0 = std::vector<double>(matrix_cols*matrix_rows, 0);
-    auto naive_1st_col_mask_1 = std::vector<double>(matrix_cols*matrix_rows, 0);
-    auto naive_1st_col_mask_3 = std::vector<double>(matrix_cols*matrix_rows, 0);
+void prepare_cpu_context(const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys, const size_t matrix_cols,
+						 const size_t matrix_rows) {
+	// Safety check
+	if (matrix_cols * matrix_rows != num_slots) {
+		std::cerr << "Matrix size is different from number of slots" << std::endl;
+		exit(EXIT_FAILURE);
+	}
+	// Multiplication keys.
+	cc_cpu->EvalMultKeyGen(keys.secretKey);
+	// Rotation keys for same row value propagation and accumulation by rows and columns.
+	std::vector<int> col_rot_idx;
+	for (size_t j = 1; j < matrix_cols; j <<= 1) {
+		col_rot_idx.push_back(static_cast<int>(j));
+		col_rot_idx.push_back(-static_cast<int>(j));
+	}
+	for (size_t i = matrix_cols; i < matrix_cols * matrix_rows; i <<= 1) {
+		col_rot_idx.push_back(static_cast<int>(i));
+	}
+	cc_cpu->EvalRotateKeyGen(keys.secretKey, col_rot_idx);
+	// First column matrix mask creation.
+	auto naive_1st_col_mask = std::vector<double>(matrix_cols, 0);
+	auto naive_1st_col_mask_0 = std::vector<double>(matrix_cols, 0);
+	auto naive_1st_col_mask_1 = std::vector<double>(matrix_cols, 0);
+	auto naive_1st_col_mask_3 = std::vector<double>(matrix_cols, 0);
 
-    auto naive_phi_vector = std::vector<double>(matrix_cols*matrix_rows, 0);
-    for (size_t i = 0; i < matrix_cols*matrix_rows; i+=matrix_cols) {
-        naive_1st_col_mask[i] = 1;
+	auto naive_phi_vector = std::vector<double>(matrix_cols, 0);
+	for (size_t i = 0; i < matrix_cols; i += matrix_cols) {
+		naive_1st_col_mask[i] = 1;
 		naive_1st_col_mask_0[i] = 0.5;
 		naive_1st_col_mask_1[i] = 0.15;
 		naive_1st_col_mask_3[i] = -0.0015;
-    }
-    first_column_mask = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask);
-    first_column_mask_0 = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask_0);
-    first_column_mask_1 = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask_1);
-    first_column_mask_3 = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask_3);
-    
-    const auto phi_plaintext = cc_cpu->MakeCKKSPackedPlaintext(naive_phi_vector);
-    phi = cc_cpu->Encrypt(phi_plaintext, keys.publicKey);
-    phi_prev = cc_cpu->Encrypt(phi_plaintext, keys.secretKey);
+	}
+	first_column_mask = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask, 1, 0, nullptr, matrix_cols);
+	first_column_mask_0 = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask_0, 1, 0, nullptr, matrix_cols);
+	first_column_mask_1 = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask_1, 1, 0, nullptr, matrix_cols);
+	first_column_mask_3 = cc_cpu->MakeCKKSPackedPlaintext(naive_1st_col_mask_3, 1, 0, nullptr, matrix_cols);
 
-    // Bootstrapping config.
+	const auto phi_plaintext = cc_cpu->MakeCKKSPackedPlaintext(naive_phi_vector);
+	phi = cc_cpu->Encrypt(phi_plaintext, keys.publicKey);
+	phi_prev = cc_cpu->Encrypt(phi_plaintext, keys.secretKey);
 
-    cc_cpu->EvalBootstrapSetup(level_budget, {0,0}, matrix_cols);
-    cc_cpu->EvalBootstrapKeyGen(keys.secretKey, matrix_cols);
-    cc_cpu->EvalBootstrapPrecompute(matrix_cols);
+	// Bootstrapping config.
 
+	cc_cpu->EvalBootstrapSetup(level_budget, bStep, matrix_cols);
+	cc_cpu->EvalBootstrapKeyGen(keys.secretKey, matrix_cols);
+	cc_cpu->EvalBootstrapPrecompute(matrix_cols);
 }
 
 /**
@@ -132,14 +139,14 @@ void prepare_cpu_context(const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys, cons
  * @param ct Matrix of data.
  */
 void activation_function_cpu(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct) {
-    // Ciphertexts for the variables.
-    auto ct3 = cc_cpu->EvalSquare(ct);
-    const auto ct_aux = cc_cpu->EvalMult(ct, first_column_mask_3);
+	// Ciphertexts for the variables.
+	auto ct3 = cc_cpu->EvalSquare(ct);
+	const auto ct_aux = cc_cpu->EvalMult(ct, first_column_mask_3);
 	ct3 = cc_cpu->EvalMult(ct3, ct_aux);
 	ct = cc_cpu->EvalMult(ct, first_column_mask_1);
 
-    cc_cpu->EvalAddInPlace(ct, ct3);
-    cc_cpu->EvalAddInPlace(ct, first_column_mask_0);
+	cc_cpu->EvalAddInPlace(ct, ct3);
+	cc_cpu->EvalAddInPlace(ct, first_column_mask_0);
 }
 
 /**
@@ -148,10 +155,10 @@ void activation_function_cpu(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct) {
  * @param num_columns Number of columns of the matrix.
  */
 void row_accumulate(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct, const size_t num_columns) {
-    for (size_t j = 1; j < num_columns; j <<= 1) {
-        auto rot = cc_cpu->EvalRotate(ct, static_cast<int>(j));
-        cc_cpu->EvalAddInPlace(ct, rot);
-    }
+	for (size_t j = 1; j < num_columns; j <<= 1) {
+		auto rot = cc_cpu->EvalRotate(ct, static_cast<int>(j));
+		cc_cpu->EvalAddInPlace(ct, rot);
+	}
 }
 
 /**
@@ -160,10 +167,10 @@ void row_accumulate(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct, const size_t n
  * @param num_columns Number of columns of the matrix.
  */
 void row_propagate(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct, const size_t num_columns) {
-    for (size_t j = 1; j < num_columns; j <<= 1) {
-        auto rot = cc_cpu->EvalRotate(ct, -static_cast<int>(j));
-        cc_cpu->EvalAddInPlace(ct, rot);
-    }
+	for (size_t j = 1; j < num_columns; j <<= 1) {
+		auto rot = cc_cpu->EvalRotate(ct, -static_cast<int>(j));
+		cc_cpu->EvalAddInPlace(ct, rot);
+	}
 }
 
 /**
@@ -173,10 +180,10 @@ void row_propagate(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct, const size_t nu
  * @param num_columns Number of columns of the matrix.
  */
 void column_accumulate(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct, const size_t num_rows, const size_t num_columns) {
-    for (size_t j = num_columns ; j < num_rows*num_columns; j <<= 1) {
-        auto rot = cc_cpu->EvalRotate(ct, static_cast<int>(j));
-        cc_cpu->EvalAddInPlace(ct, rot);
-    }
+	for (size_t j = num_columns; j < num_rows * num_columns; j <<= 1) {
+		auto rot = cc_cpu->EvalRotate(ct, static_cast<int>(j));
+		cc_cpu->EvalAddInPlace(ct, rot);
+	}
 }
 
 /**
@@ -191,89 +198,103 @@ void column_accumulate(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &ct, const size_
  * @return Iteration time
  */
 iteration_time_t logistic_regression_cpu_train_iteration(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &data,
-                                             const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &results,
-                                             lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                             const size_t rows,
-                                             const size_t columns,
-                                             const size_t batch_size,
-                                             const double learning_rate) {
+														 const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &results,
+														 lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
+														 const size_t rows, const size_t columns,
+														 const size_t batch_size, const double learning_rate) {
+	lbcrypto::Plaintext data_pt;
 
-    const auto start = std::chrono::high_resolution_clock::now();
+	cc_cpu->Decrypt(keys.secretKey, data, &data_pt);
+	// std::cout << data_pt << std::endl;
+	std::cout << first_column_mask_0 << std::endl;
+	std::cout << first_column_mask_1 << std::endl;
+	std::cout << first_column_mask_3 << std::endl;
 
-    /// Step 1. Multiply weight matrix by data matrix.
-    lbcrypto::Ciphertext<lbcrypto::DCRTPoly> ct = cc_cpu->EvalMult(data, weights);
+	const auto start = std::chrono::high_resolution_clock::now();
 
-    /// Step 2. Accumulate results on the first column (inner product result).
-    row_accumulate(ct, columns);
+	weights->SetSlots(columns);
+	weights = cc_cpu->EvalBootstrap(weights);
+	weights->SetSlots(num_slots);
 
-    /// Step 3. Apply the activation function.
-    activation_function_cpu(ct);
+	/// Step 1. Multiply weight matrix by data matrix.
+	lbcrypto::Ciphertext<lbcrypto::DCRTPoly> ct = cc_cpu->EvalMult(data, weights);
 
-    /// Step 4. Remove garbage from the ciphertext by masking the last result. Fused in activation
-    //ct = cc_cpu->EvalMult(ct, first_column_mask);
+	/// Step 2. Accumulate results on the first column (inner product result).
+	row_accumulate(ct, columns);
 
-    /// Step 5. Compute loss (ours - expected).
-    cc_cpu->EvalSubInPlace(ct, results);
+	/// Step 3. Apply the activation function.
+	activation_function_cpu(ct);
+	if (0) {
 
-    /// Step 6. Propagation of first column value to the rest of the columns.
-    row_propagate(ct, columns);
+		/// Step 4. Remove garbage from the ciphertext by masking the last result. Fused in activation
+		// ct = cc_cpu->EvalMult(ct, first_column_mask);
 
-    /// Step 7. Adjust to learning rate and batch configuration.
-    cc_cpu->EvalMultInPlace(data, (learning_rate)/static_cast<double>(batch_size));
+		/// Step 5. Compute loss (ours - expected).
+		cc_cpu->EvalSubInPlace(ct, results);
 
-    /// Step 8. Multiply the result by the original data.
-    ct = cc_cpu->EvalMult(ct, data);
+		/// Step 6. Propagation of first column value to the rest of the columns.
+		row_propagate(ct, columns);
 
-    /// Step 9. Compute the gradient loss across all data rows.
-    column_accumulate(ct, rows, columns);
+		/// Step 7. Adjust to learning rate and batch configuration.
+		cc_cpu->EvalMultInPlace(data, (learning_rate) / static_cast<double>(batch_size));
 
-    /// Step 10. Update original weights.
-    cc_cpu->EvalSubInPlace(weights, ct);
+		/// Step 8. Multiply the result by the original data.
+		ct = cc_cpu->EvalMult(ct, data);
 
-    const auto boot = std::chrono::high_resolution_clock::now();
+		/// Step 9. Compute the gradient loss across all data rows.
+		column_accumulate(ct, rows, columns);
+	}
+	/// Step 10. Update original weights.
+	weights->SetSlots(columns);
+	ct->SetSlots(columns);
+	cc_cpu->EvalSubInPlace(weights, ct);
 
-    /// Boostrapping
-    static bool do_boot = false;
-    if (bootstrap_every_two) {
-        if (do_boot) {
-            weights->SetSlots(columns);
-            weights = cc_cpu->EvalBootstrap(weights);
-            weights->SetSlots(num_slots);
-        }
-        do_boot = !do_boot;
-    }
-    else {
-        weights->SetSlots(columns);
-        weights = cc_cpu->EvalBootstrap(weights);
-        weights->SetSlots(num_slots);
-    }
+	const auto boot = std::chrono::high_resolution_clock::now();
 
-    const auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed_total = std::chrono::duration_cast<time_unit_t>(end - start);
-    auto elapsed_boot = std::chrono::duration_cast<time_unit_t>(end - boot);
-    return std::make_pair(elapsed_total, elapsed_boot);
+	/// Boostrapping
+	static bool do_boot = false;
+	if (bootstrap_every_two) {
+		if (do_boot) {
+			weights->SetSlots(columns);
+			weights = cc_cpu->EvalBootstrap(weights);
+			weights->SetSlots(num_slots);
+		}
+		do_boot = !do_boot;
+	} else {
+		/*
+		weights->SetSlots(columns);
+		weights = cc_cpu->EvalBootstrap(weights);
+		weights->SetSlots(num_slots);
+		 */
+	}
+
+	const auto end = std::chrono::high_resolution_clock::now();
+	auto elapsed_total = std::chrono::duration_cast<time_unit_t>(end - start);
+	auto elapsed_boot = std::chrono::duration_cast<time_unit_t>(end - boot);
+	return std::make_pair(elapsed_total, elapsed_boot);
 }
 
 std::vector<iteration_time_t> logistic_regression_cpu_train(const std::vector<std::vector<double>> &data,
-                                   const std::vector<std::vector<double>> &results,
-                                   lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                   const size_t rows,
-                                   const size_t columns,
-                                   const size_t samples_last_ciphertext,
-                                   const size_t training_iterations,
-                                   const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk) {
+															const std::vector<std::vector<double>> &results,
+															lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
+															const size_t rows, const size_t columns,
+															const size_t samples_last_ciphertext,
+															const size_t training_iterations,
+															const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk) {
 
-    std::vector<iteration_time_t> times(training_iterations);
-    std::cout << "Doing " << training_iterations << " training iterations" << std::endl;
-    for (size_t it = 0; it < training_iterations; ++it) {
-        const size_t data_idx = it % data.size();
-        const size_t batch_size = data_idx == data.size() - 1 ? samples_last_ciphertext : rows;
-        const double learning_rate = 10/(static_cast<double>(it)+1) > 0.005 ? 10/(static_cast<double>(it)+1) : 0.005;
-        auto enc_data = encrypt_data(data[data_idx], pk);
-        const auto enc_results = encrypt_data(results[data_idx], pk);
-        times[it] = logistic_regression_cpu_train_iteration(enc_data, enc_results, weights, rows, columns, batch_size, learning_rate);
-    }
-    return times;
+	std::vector<iteration_time_t> times(training_iterations);
+	std::cout << "Doing " << training_iterations << " training iterations" << std::endl;
+	for (size_t it = 0; it < training_iterations; ++it) {
+		const size_t data_idx = it % data.size();
+		const size_t batch_size = data_idx == data.size() - 1 ? samples_last_ciphertext : rows;
+		const double learning_rate =
+				10 / (static_cast<double>(it) + 1) > 0.005 ? 10 / (static_cast<double>(it) + 1) : 0.005;
+		auto enc_data = encrypt_data(data[data_idx], pk, 1, 0);
+		const auto enc_results = encrypt_data(results[data_idx], pk, 1, 0);
+		times[it] = logistic_regression_cpu_train_iteration(enc_data, enc_results, weights, rows, columns, batch_size,
+															learning_rate);
+	}
+	return times;
 }
 
 /**
@@ -286,43 +307,41 @@ std::vector<iteration_time_t> logistic_regression_cpu_train(const std::vector<st
  * @return Iteration time.
  */
 iteration_time_t logistic_regression_cpu_inference_iteration(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &data,
-                                       const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                       const size_t rows,
-                                       const size_t columns,
-                                       const size_t batch_size) {
-    const auto start = std::chrono::high_resolution_clock::now();
-    /// Step 1. Multiply weight matrix by data matrix.
-    lbcrypto::Ciphertext<lbcrypto::DCRTPoly> ct = cc_cpu->EvalMult(data, weights);
+															 const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
+															 const size_t rows, const size_t columns,
+															 const size_t batch_size) {
+	const auto start = std::chrono::high_resolution_clock::now();
+	/// Step 1. Multiply weight matrix by data matrix.
+	lbcrypto::Ciphertext<lbcrypto::DCRTPoly> ct = cc_cpu->EvalMult(data, weights);
 
-    /// Step 2. Accumulate results on the first column (inner product result).
-    row_accumulate(ct, columns);
+	/// Step 2. Accumulate results on the first column (inner product result).
+	row_accumulate(ct, columns);
 
-    /// Step 3. Apply the activation function.
-    activation_function_cpu(ct);
+	/// Step 3. Apply the activation function.
+	activation_function_cpu(ct);
 
-    /// Step 4. Remove garbage from the ciphertext by masking the last result.
-    //data = cc_cpu->EvalMult(ct, first_column_mask);
-    data = ct;
-    
-    const auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed_total = std::chrono::duration_cast<time_unit_t>(end - start);
-    return std::make_pair(elapsed_total, time_unit_t::zero());
+	/// Step 4. Remove garbage from the ciphertext by masking the last result.
+	// data = cc_cpu->EvalMult(ct, first_column_mask);
+	data = ct;
+
+	const auto end = std::chrono::high_resolution_clock::now();
+	auto elapsed_total = std::chrono::duration_cast<time_unit_t>(end - start);
+	return std::make_pair(elapsed_total, time_unit_t::zero());
 }
 
 std::vector<iteration_time_t> logistic_regression_cpu_inference(std::vector<std::vector<double>> &data,
-                                   const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                   const size_t rows,
-                                   const size_t columns,
-                                   const size_t samples_last_ciphertext,
-                                   const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys) {
-    std::vector<iteration_time_t> times(data.size());
-    for (size_t it = 0; it < data.size(); ++it) {
-        const size_t batch_size = it == data.size() - 1 ? samples_last_ciphertext : rows;
-        auto enc_data = encrypt_data(data[it], keys.publicKey);
-        times[it] = logistic_regression_cpu_inference_iteration(enc_data, weights, rows, columns, batch_size);
-        data[it] = decrypt_data(enc_data, keys.secretKey);
-    }
-    return times;
+																const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
+																const size_t rows, const size_t columns,
+																const size_t samples_last_ciphertext,
+																const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys) {
+	std::vector<iteration_time_t> times(data.size());
+	for (size_t it = 0; it < data.size(); ++it) {
+		const size_t batch_size = it == data.size() - 1 ? samples_last_ciphertext : rows;
+		auto enc_data = encrypt_data(data[it], keys.publicKey, 1, 0);
+		times[it] = logistic_regression_cpu_inference_iteration(enc_data, weights, rows, columns, batch_size);
+		data[it] = decrypt_data(enc_data, keys.secretKey);
+	}
+	return times;
 }
 
 /**
@@ -337,98 +356,92 @@ std::vector<iteration_time_t> logistic_regression_cpu_inference(std::vector<std:
  * @param momentum Momentum of accelerated learning.
  * @return Iteration time.
  */
-iteration_time_t logistic_regression_cpu_train_iteration_accelerated(lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &data,
-                                             const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &results,
-                                             lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                             const size_t rows,
-                                             const size_t columns,
-                                             const size_t batch_size,
-                                             const double learning_rate,
-                                             const double momentum) {
-    const auto start = std::chrono::high_resolution_clock::now();
-    /// Step 1. Multiply weight matrix by data matrix.
-    lbcrypto::Ciphertext<lbcrypto::DCRTPoly> ct = cc_cpu->EvalMult(weights, data);
+iteration_time_t logistic_regression_cpu_train_iteration_accelerated(
+		lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &data, const lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &results,
+		lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights, const size_t rows, const size_t columns,
+		const size_t batch_size, const double learning_rate, const double momentum) {
+	const auto start = std::chrono::high_resolution_clock::now();
+	/// Step 1. Multiply weight matrix by data matrix.
+	lbcrypto::Ciphertext<lbcrypto::DCRTPoly> ct = cc_cpu->EvalMult(weights, data);
 
-    /// Step 2. Accumulate results on the first column (inner product result).
-    row_accumulate(ct, columns);
+	/// Step 2. Accumulate results on the first column (inner product result).
+	row_accumulate(ct, columns);
 
-    /// Step 3. Apply the activation function.
-    activation_function_cpu(ct);
+	/// Step 3. Apply the activation function.
+	activation_function_cpu(ct);
 
-    /// Step 4. Remove garbage from the ciphertext by masking the last result. Fused in activation.
-    //ct = cc_cpu->EvalMult(ct, first_column_mask);
+	/// Step 4. Remove garbage from the ciphertext by masking the last result. Fused in activation.
+	// ct = cc_cpu->EvalMult(ct, first_column_mask);
 
-    /// Step 5. Compute loss (ours - expected).
-    cc_cpu->EvalSubInPlace(ct, results);
+	/// Step 5. Compute loss (ours - expected).
+	cc_cpu->EvalSubInPlace(ct, results);
 
-    /// Step 6. Propagation of first column value to the rest of the columns.
-    row_propagate(ct, columns);
+	/// Step 6. Propagation of first column value to the rest of the columns.
+	row_propagate(ct, columns);
 
-    /// Step 7. Adjust to learning rate and batch configuration.
-    cc_cpu->EvalMultInPlace(data, (learning_rate)/static_cast<double>(batch_size));
+	/// Step 7. Adjust to learning rate and batch configuration.
+	cc_cpu->EvalMultInPlace(data, (learning_rate) / static_cast<double>(batch_size));
 
-    /// Step 8. Multiply the result by the original data.
-    ct = cc_cpu->EvalMult(ct, data);
+	/// Step 8. Multiply the result by the original data.
+	ct = cc_cpu->EvalMult(ct, data);
 
-    /// Step 9. Compute the gradient loss across all data rows.
-    column_accumulate(ct, rows, columns);
+	/// Step 9. Compute the gradient loss across all data rows.
+	column_accumulate(ct, rows, columns);
 
-    // Step 10. Calculate current momentum.
-    phi = cc_cpu->EvalSub(weights, ct);
+	// Step 10. Calculate current momentum.
+	phi = cc_cpu->EvalSub(weights, ct);
 
-    // Step 11. Update weights based on momentum.
-    cc_cpu->EvalSubInPlace(phi_prev, phi);
-    cc_cpu->EvalMultInPlace(phi_prev, momentum);
-    weights = cc_cpu->EvalSub(phi, phi_prev);
+	// Step 11. Update weights based on momentum.
+	cc_cpu->EvalSubInPlace(phi_prev, phi);
+	cc_cpu->EvalMultInPlace(phi_prev, momentum);
+	weights = cc_cpu->EvalSub(phi, phi_prev);
 
-    // Step 12. Save momentum for next iteration.
-    phi_prev = phi;
+	// Step 12. Save momentum for next iteration.
+	phi_prev = phi;
 
-    const auto boot = std::chrono::high_resolution_clock::now();
+	const auto boot = std::chrono::high_resolution_clock::now();
 
-    /// Boostrapping
-    static bool do_boot = false;
-    if (bootstrap_every_two) {
-        if (do_boot) {
-            weights->SetSlots(columns);
-            weights = cc_cpu->EvalBootstrap(weights);
-            weights->SetSlots(num_slots);
-            phi_prev->SetSlots(columns);
-            phi_prev = cc_cpu->EvalBootstrap(phi_prev);
-            phi_prev->SetSlots(num_slots);
-        }
-        do_boot = !do_boot;
-    }
-    else {
-        weights->SetSlots(columns);
-        weights = cc_cpu->EvalBootstrap(weights);
-        weights->SetSlots(num_slots);
-    }
+	/// Boostrapping
+	static bool do_boot = false;
+	if (bootstrap_every_two) {
+		if (do_boot) {
+			weights->SetSlots(columns);
+			weights = cc_cpu->EvalBootstrap(weights);
+			weights->SetSlots(num_slots);
+			phi_prev->SetSlots(columns);
+			phi_prev = cc_cpu->EvalBootstrap(phi_prev);
+			phi_prev->SetSlots(num_slots);
+		}
+		do_boot = !do_boot;
+	} else {
+		weights->SetSlots(columns);
+		weights = cc_cpu->EvalBootstrap(weights);
+		weights->SetSlots(num_slots);
+	}
 
-    const auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed_total = std::chrono::duration_cast<time_unit_t>(end - start);
-    auto elapsed_boot = std::chrono::duration_cast<time_unit_t>(end - boot);
-    return std::make_pair(elapsed_total, elapsed_boot);
+	const auto end = std::chrono::high_resolution_clock::now();
+	auto elapsed_total = std::chrono::duration_cast<time_unit_t>(end - start);
+	auto elapsed_boot = std::chrono::duration_cast<time_unit_t>(end - boot);
+	return std::make_pair(elapsed_total, elapsed_boot);
 }
 
-std::vector<iteration_time_t> logistic_regression_cpu_train_accelerated(const std::vector<std::vector<double>> &data,
-                                   const std::vector<std::vector<double>> &results,
-                                   lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights,
-                                   const size_t rows,
-                                   const size_t columns,
-                                   const size_t samples_last_ciphertext,
-                                   const size_t training_iterations,
-                                   const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk) {
-    std::vector<iteration_time_t> times(training_iterations);
-    std::cout << "Doing " << training_iterations << " training iterations (NAG)" << std::endl;
-    for (size_t it = 0; it < training_iterations; ++it) {
-        const size_t data_idx = it % data.size();
-        const size_t batch_size = data_idx == data.size() - 1 ? samples_last_ciphertext : rows;
-        const double learning_rate = 10/(static_cast<double>(it)+1) > 0.005 ? 10/(static_cast<double>(it)+1) : 0.005;
-        const double momentum = 1.0 / static_cast<double>(training_iterations);
-        auto enc_data = encrypt_data(data[data_idx], pk);
-        const auto enc_results = encrypt_data(results[data_idx], pk);
-        times[it] = logistic_regression_cpu_train_iteration_accelerated(enc_data, enc_results, weights, rows, columns, batch_size, learning_rate, momentum);
-    }
-    return times;
+std::vector<iteration_time_t> logistic_regression_cpu_train_accelerated(
+		const std::vector<std::vector<double>> &data, const std::vector<std::vector<double>> &results,
+		lbcrypto::Ciphertext<lbcrypto::DCRTPoly> &weights, const size_t rows, const size_t columns,
+		const size_t samples_last_ciphertext, const size_t training_iterations,
+		const lbcrypto::PublicKey<lbcrypto::DCRTPoly> &pk) {
+	std::vector<iteration_time_t> times(training_iterations);
+	std::cout << "Doing " << training_iterations << " training iterations (NAG)" << std::endl;
+	for (size_t it = 0; it < training_iterations; ++it) {
+		const size_t data_idx = it % data.size();
+		const size_t batch_size = data_idx == data.size() - 1 ? samples_last_ciphertext : rows;
+		const double learning_rate =
+				10 / (static_cast<double>(it) + 1) > 0.005 ? 10 / (static_cast<double>(it) + 1) : 0.005;
+		const double momentum = 1.0 / static_cast<double>(training_iterations);
+		auto enc_data = encrypt_data(data[data_idx], pk, 1, 0);
+		const auto enc_results = encrypt_data(results[data_idx], pk, 1, 0);
+		times[it] = logistic_regression_cpu_train_iteration_accelerated(enc_data, enc_results, weights, rows, columns,
+																		batch_size, learning_rate, momentum);
+	}
+	return times;
 }

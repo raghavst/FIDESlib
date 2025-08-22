@@ -22,7 +22,7 @@ class Ciphertext {
     double NoiseFactor = 0;
     int NoiseLevel = {1};
 
-    Ciphertext(Ciphertext&& ct_moved) = default;
+    Ciphertext(Ciphertext&& ct_moved) noexcept;
 
     explicit Ciphertext(Context& cc);
 
@@ -43,7 +43,7 @@ class Ciphertext {
     void multPt(const Ciphertext& c, const Plaintext& b, bool rescale = false);
     void addMultPt(const Ciphertext& c, const Plaintext& b, bool rescale = false);
 
-    void mult(const Ciphertext& b, const KeySwitchingKey& kskEval, bool rescale = false);
+    void mult(const Ciphertext& b, const KeySwitchingKey& kskEval, bool rescale = false, bool moddown = true);
     void mult(const Ciphertext& b, const Ciphertext& c, const KeySwitchingKey& kskEval, bool rescale = false);
 
     void multScalarNoPrecheck(const double c, bool rescale = false);
@@ -54,11 +54,11 @@ class Ciphertext {
 
     void square(const Ciphertext& src, const KeySwitchingKey& kskEval, bool rescale = false);
 
-    void rotate(const int index, const KeySwitchingKey& kskRot);
+    void rotate(const int index, const KeySwitchingKey& kskRot, bool moddown = true);
     void rotate(const Ciphertext& c, const int index, const KeySwitchingKey& kskRot);
     void conjugate(const Ciphertext& c);
 
-    void modDown();
+    void modDown(bool free = false);
 
     void modUp();
 
@@ -72,9 +72,10 @@ class Ciphertext {
 
     void automorph_multi(const int index, const int br);
 
+    void extend();
     void rotate_hoisted(const std::vector<KeySwitchingKey*>& ksk, const std::vector<int>& indexes,
-                        std::vector<Ciphertext*> results);
-    void evalLinearWSumMutable(uint32_t n, const std::vector<Ciphertext>& ctxs, std::vector<double> weights);
+                        std::vector<Ciphertext*> results, bool ext);
+    void evalLinearWSumMutable(uint32_t n, const std::vector<Ciphertext*>& ctxs, std::vector<double> weights);
     void addMultScalar(const Ciphertext& ciphertext, double d);
     void addScalar(const Ciphertext& b, double c);
     void add(const Ciphertext& ciphertext, const Ciphertext& ciphertext1);
@@ -85,6 +86,11 @@ class Ciphertext {
     bool adjustForAddOrSub(const Ciphertext& ciphertext);
     bool adjustForMult(const Ciphertext& ciphertext);
     [[nodiscard]] bool hasSameScalingFactor(const Plaintext& b) const;
+
+    static void clearOpRecord();
+    static void printOpRecord();
+    void dotProductPt(const Ciphertext* ciphertexts, const Plaintext* plaintexts, const int n, bool ext);
+    void dotProductPt(const Ciphertext* ciphertexts, const Plaintext** plaintexts, const int n, bool ext);
 };
 
 }  // namespace FIDESlib::CKKS

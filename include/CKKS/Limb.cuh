@@ -4,10 +4,9 @@
 #ifndef FIDESLIB_CKKS_LIMB_CUH
 #define FIDESLIB_CKKS_LIMB_CUH
 
-#include <concepts>
+// #include <concepts>
 #include <iostream>
 #include <variant>
-#include "ModMult.cuh"
 #include "VectorGPU.cuh"
 #include "forwardDefs.cuh"
 

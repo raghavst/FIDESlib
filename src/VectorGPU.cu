@@ -59,10 +59,12 @@ VectorGPU<T>::VectorGPU(const Stream& stream, const int size, const int device, 
         assert(dev == device);
         //cudaSetDevice(device);
     }
+    // TODO Comprobar que el stream está asociado a la GPU (creo que no se puede).
     int bytes = size * sizeof(T);
     cudaMallocAsync(&data, bytes, stream.ptr);
     if (src != nullptr) {
         cudaMemcpyAsync(data, src, bytes, cudaMemcpyHostToDevice, stream.ptr);
+        // TODO unregister
     }
 
     Out(MEMORY, "Managed vector construct OK");
@@ -70,6 +72,7 @@ VectorGPU<T>::VectorGPU(const Stream& stream, const int size, const int device, 
 
 template class VectorGPU<int>;
 template class VectorGPU<void*>;
+template class VectorGPU<void**>;
 template class VectorGPU<uint32_t>;
 template class VectorGPU<uint64_t>;
 }  // namespace FIDESlib

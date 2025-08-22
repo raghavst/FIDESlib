@@ -6,9 +6,7 @@
 
 #include <cinttypes>
 #include <vector>
-//#include "CKKS/openfhe-interface/rawciphertext.cuh"
 #include "LimbUtils.cuh"
-//#include "CKKS/Parameters.cuh"
 
 namespace FIDESlib {
 constexpr int MAXP = 64;
@@ -53,6 +51,9 @@ struct Constants {
 
     int num_primeid_digit_from[MAXD][MAXP];
     int num_primeid_digit_to[MAXD][MAXP];
+    int primeid_digit[MAXP];
+
+    int pos_in_digit[MAXD][MAXP];
 
     union {
         struct {
@@ -159,6 +160,7 @@ extern __device__ uint64_t DecompAndModUp_matrix[MAXP * MAXD * MAXP * MAXP];
 extern __device__ uint64_t DecompAndModUp_matrix_shoup[MAXP * MAXD * MAXP * MAXP];
 }  // namespace Globals
 extern Constants host_constants;
+extern Constants host_constants_per_gpu[8];
 extern Global host_global;
 
 #define C_ (constants)

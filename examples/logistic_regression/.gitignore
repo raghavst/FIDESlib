@@ -5,3 +5,5 @@ build/
 data/*.csv
 times/*.csv
 weights/*.csv
+
+cmake-build-*/

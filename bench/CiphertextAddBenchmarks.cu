@@ -102,10 +102,7 @@ BENCHMARK_DEFINE_F(GeneralFixture, AddScalar)(benchmark::State& state) {
     CudaCheckErrorMod;
 }
 
-BENCHMARK_REGISTER_F(GeneralFixture, CiphertextAdd)
-    ->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG});
-BENCHMARK_REGISTER_F(GeneralFixture, AddPlaintext)
-    ->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG});
-BENCHMARK_REGISTER_F(GeneralFixture, AddScalar)
-    ->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG});
+BENCHMARK_REGISTER_F(GeneralFixture, CiphertextAdd)->ArgsProduct({{3, 6}, {0}, BATCH_CONFIG});
+BENCHMARK_REGISTER_F(GeneralFixture, AddPlaintext)->ArgsProduct({{3, 6}, {0}, BATCH_CONFIG});
+BENCHMARK_REGISTER_F(GeneralFixture, AddScalar)->ArgsProduct({{3, 6}, {0}, BATCH_CONFIG});
 }  // namespace FIDESlib::Benchmarks

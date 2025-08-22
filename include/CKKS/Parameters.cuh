@@ -22,10 +22,12 @@ class Parameters {
     std::vector<double> ScalingFactorReal;
     std::vector<double> ScalingFactorRealBig;
     lbcrypto::ScalingTechnique scalingTechnique;
-    RawParams* raw = nullptr;
+    std::optional<RawParams> raw;
     int batch = 1;
 
     Parameters adaptTo(RawParams& raw) const {
+        //:q
+        //std::cout << "Adapt in" << std::endl;
 
         std::vector<PrimeRecord> new_primes;
         for (auto i : raw.moduli) {
@@ -46,8 +48,9 @@ class Parameters {
                        .ScalingFactorReal = raw.ScalingFactorReal,
                        .ScalingFactorRealBig = raw.ScalingFactorRealBig,
                        .scalingTechnique = raw.scalingTechnique,
-                       .raw = &raw,
+                       .raw = raw,
                        .batch = batch};
+        //std::cout << "Adapt out" << std::endl;
         return res;
     }
 };

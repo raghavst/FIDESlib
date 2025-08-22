@@ -2,7 +2,6 @@
 // Created by carlosad on 12/09/24.
 //
 #include <cassert>
-#include <execution>
 #include <iomanip>
 
 #include <gtest/gtest.h>
@@ -18,6 +17,8 @@
 #include "cpuNTT.hpp"
 #include "cpuNTT_nega.hpp"
 
+constexpr bool VERBOSE = false;
+
 namespace FIDESlib::Testing {
 class NegacyclicNTTTest : public FIDESlibParametrizedTest {};
 
@@ -25,9 +26,7 @@ TEST_P(NegacyclicNTTTest, TestCpuNTT) {
     int devcount = -1;
     cudaGetDeviceCount(&devcount);
 
-    std::vector<int> GPUs;
-    for (int i = 0; i < devcount; ++i)
-        GPUs.push_back(i);
+    std::vector<int> GPUs = devices;
 
     FIDESlib::CKKS::Parameters custom = fideslibParams;
     custom.logN = 3;
@@ -72,7 +71,8 @@ TEST_P(NegacyclicNTTTest, TestCpuNTT) {
         //std::sort(res_gpu.begin(), res_gpu.end());
         //std::sort(res_cpu.begin(), res_cpu.end());
 
-        std::cout << "Polynomial multiplication\n";
+        if constexpr (VERBOSE)
+            std::cout << "Polynomial multiplication\n";
 
         std::vector<uint64_t> res(8, primeid);
 
@@ -187,7 +187,8 @@ TEST_P(NegacyclicNTTTest, TestCpuNTT_adapt_cyclic) {
         //std::sort(res_gpu.begin(), res_gpu.end());
         //std::sort(res_cpu.begin(), res_cpu.end());
 
-        std::cout << "Polynomial multiplication\n";
+        if constexpr (VERBOSE)
+            std::cout << "Polynomial multiplication\n";
 
         std::vector<uint64_t> res(8, 0);
 
@@ -286,7 +287,8 @@ TEST_P(NegacyclicNTTTest, TestCpuNTT2) {
         //std::sort(res_gpu.begin(), res_gpu.end());
         //std::sort(res_cpu.begin(), res_cpu.end());
 
-        std::cout << "Polynomial multiplication\n";
+        if constexpr (VERBOSE)
+            std::cout << "Polynomial multiplication\n";
 
         std::vector<uint64_t> res(N, 0);
 
@@ -388,7 +390,8 @@ TEST_P(NegacyclicNTTTest, TestCpuNTTBigMod) {
         //std::sort(res_gpu.begin(), res_gpu.end());
         //std::sort(res_cpu.begin(), res_cpu.end());
 
-        std::cout << "Polynomial multiplication\n";
+        if constexpr (VERBOSE)
+            std::cout << "Polynomial multiplication\n";
 
         std::vector<uint64_t> res(N, 0);
 

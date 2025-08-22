@@ -77,6 +77,7 @@ BENCHMARK_DEFINE_F(GeneralFixture, Rescale)(benchmark::State& state) {
     state.counters["p_limbs"] = state.range(3);
 
     for (auto _ : state) {
+        cudaDeviceSynchronize();
         auto start = std::chrono::high_resolution_clock::now();
         GPUct1.rescale();
         CudaCheckErrorMod;
@@ -238,14 +239,15 @@ BENCHMARK_DEFINE_F(GeneralFixture, AdjustPlaintext)(benchmark::State& state) {
 }
 
 BENCHMARK_REGISTER_F(GeneralFixture, MultPlaintext)
-    ->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG, LEVEL_CONFIG})
+    ->ArgsProduct({PARAMETERS, {0}, BATCH_CONFIG, LEVEL_CONFIG})
     ->UseManualTime();
 BENCHMARK_REGISTER_F(GeneralFixture, Rescale)
-    ->ArgsProduct({{0, 1, 2, 3}, {0}, BATCH_CONFIG, LEVEL_CONFIG})
+    ->ArgsProduct({PARAMETERS, {0}, BATCH_CONFIG, LEVEL_CONFIG})
     ->UseManualTime();
 
+/*
 BENCHMARK_REGISTER_F(GeneralFixture, AdjustAddSub)
-    ->ArgsProduct({{0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17, 21, 22, 23, 24},
+    ->ArgsProduct({{0, 1, 2, 7, 8, 9, 10, 14, 15, 16, 17, 21, 22, 23, 24},
                    {0},
                    BATCH_CONFIG,
                    {0, 1, 2, 3},
@@ -254,7 +256,7 @@ BENCHMARK_REGISTER_F(GeneralFixture, AdjustAddSub)
                    {1, 2}})
     ->UseManualTime();
 BENCHMARK_REGISTER_F(GeneralFixture, AdjustMult)
-    ->ArgsProduct({{0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17, 21, 22, 23, 24},
+    ->ArgsProduct({{0, 1, 2, 7, 8, 9, 10, 14, 15, 16, 17, 21, 22, 23, 24},
                    {0},
                    BATCH_CONFIG,
                    {0, 1, 2, 3},
@@ -263,7 +265,7 @@ BENCHMARK_REGISTER_F(GeneralFixture, AdjustMult)
                    {1, 2}})
     ->UseManualTime();
 BENCHMARK_REGISTER_F(GeneralFixture, AdjustPlaintext)
-    ->ArgsProduct({{0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17, 21, 22, 23, 24},
+    ->ArgsProduct({{0, 1, 2, 7, 8, 9, 10, 14, 15, 16, 17, 21, 22, 23, 24},
                    {0},
                    BATCH_CONFIG,
                    {0, 1, 2, 3},
@@ -271,5 +273,5 @@ BENCHMARK_REGISTER_F(GeneralFixture, AdjustPlaintext)
                    {0, 1, 2, 3},
                    {1, 2}})
     ->UseManualTime();
-
+*/
 }  // namespace FIDESlib::Benchmarks

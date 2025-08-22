@@ -16,8 +16,10 @@ extern FIDESlib::CKKS::Parameters params;
  * @param keys Key pair.
  * @param matrix_cols Number of columns of each data sample on a ciphertext. Needed for rotation index key generation.
  * @param matrix_rows Number of data samples (rows) on the ciphertext matrix.
+ * @param boot
  */
-void prepare_gpu_context(FIDESlib::CKKS::Context &cc_gpu, const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys, size_t matrix_cols, size_t matrix_rows);
+void prepare_gpu_context(FIDESlib::CKKS::Context &cc_gpu, const lbcrypto::KeyPair<lbcrypto::DCRTPoly> &keys,
+						 size_t matrix_cols, size_t matrix_rows, bool boot);
 
 /**
  * Move a ciphertext to the GPU.

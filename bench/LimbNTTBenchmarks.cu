@@ -648,7 +648,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, LimbDeviceBatchINTT64)(benchmark::State& sta
 
     for (auto _ : state) {
         for (auto& i : v)
-            i.INTT(state.range(2));
+            i.INTT(state.range(2), false);
         CudaCheckErrorMod;
     }
 }
@@ -684,7 +684,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, LimbDeviceBatchNTT64)(benchmark::State& stat
 
     for (auto _ : state) {
         for (auto& i : v)
-            i.NTT<algo>(state.range(2));
+            i.NTT<algo>(state.range(2), false);
         CudaCheckErrorMod;
     }
 }
@@ -721,7 +721,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, LimbDeviceBatchINTT32)(benchmark::State& sta
 
     for (auto _ : state) {
         for (auto& i : v)
-            i.INTT<algo>(state.range(2));
+            i.INTT<algo>(state.range(2), false);
         CudaCheckErrorMod;
     }
 }
@@ -758,18 +758,18 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, LimbDeviceBatchNTT32)(benchmark::State& stat
 
     for (auto _ : state) {
         for (auto& i : v)
-            i.NTT<algo>(state.range(2));
+            i.NTT<algo>(state.range(2), false);
         CudaCheckErrorMod;
     }
 }
 
 BENCHMARK_REGISTER_F(FIDESlibFixture, LimbDeviceBatchINTT64)
-    ->ArgsProduct({{6, 7, 8, 1}, {0, 1, 8, 16, 27, 32, 64, 128}, {1, -1, 2, 3, 4, 6, 8, 12, 16, 100}});
+    ->ArgsProduct({{6, 7, 8, 1}, {0, 1, 8, 16, 32, 64, 128}, BATCH_CONFIG});
 BENCHMARK_REGISTER_F(FIDESlibFixture, LimbDeviceBatchNTT64)
-    ->ArgsProduct({{6, 7, 8, 1}, {0, 1, 8, 16, 27, 32, 64, 128}, {1, -1, 2, 3, 4, 6, 8, 12, 16, 100}});
+    ->ArgsProduct({{6, 7, 8, 1}, {0, 1, 8, 16, 32, 64, 128}, BATCH_CONFIG});
 BENCHMARK_REGISTER_F(FIDESlibFixture, LimbDeviceBatchINTT32)
-    ->ArgsProduct({{0}, {0, 1, 8, 16, 32, 54, 64, 128}, {1, -1, 2, 3, 4, 6, 8, 12, 16, 100}});
+    ->ArgsProduct({{0}, {0, 1, 8, 16, 32, 64, 128}, BATCH_CONFIG});
 BENCHMARK_REGISTER_F(FIDESlibFixture, LimbDeviceBatchNTT32)
-    ->ArgsProduct({{0}, {0, 1, 8, 16, 32, 54, 64, 128}, {1, -1, 2, 3, 4, 6, 8, 12, 16, 100}});
+    ->ArgsProduct({{0}, {0, 1, 8, 16, 32, 54, 64, 128}, BATCH_CONFIG});
 
 }  // namespace FIDESlib::Benchmarks

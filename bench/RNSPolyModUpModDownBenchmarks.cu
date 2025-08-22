@@ -85,7 +85,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyStandardModDown)(benchmark::State& st
         }
         FIDESlib::CKKS::RNSPoly a(cc, state.range(2));
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_NATIVE>(state.range(1));
         CudaCheckErrorMod;
@@ -112,7 +112,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyStandardModDownContextLimbCount)(benc
     for (auto _ : state) {
         FIDESlib::CKKS::RNSPoly a(cc, cc.L);
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_NATIVE>(state.range(1));
         CudaCheckErrorMod;
@@ -145,7 +145,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyStandardModUpModDown)(benchmark::Stat
         FIDESlib::CKKS::RNSPoly a(cc, state.range(2));
         auto start = std::chrono::high_resolution_clock::now();
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         a.moddown<FIDESlib::ALGO_NATIVE>(state.range(1));
         CudaCheckErrorMod;
         auto end = std::chrono::high_resolution_clock::now();
@@ -171,7 +171,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyStandardModUpModDownContextLimbCount)
         FIDESlib::CKKS::RNSPoly a(cc, cc.L);
         auto start = std::chrono::high_resolution_clock::now();
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         a.moddown<FIDESlib::ALGO_NATIVE>(state.range(1));
         CudaCheckErrorMod;
         auto end = std::chrono::high_resolution_clock::now();
@@ -214,7 +214,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyNoneModDown)(benchmark::State& state)
         }
         FIDESlib::CKKS::RNSPoly a(cc, state.range(2));
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_NONE>(state.range(1));
         CudaCheckErrorMod;
@@ -240,7 +240,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyNoneModDownContextLimbCount)(benchmar
     for (auto _ : state) {
         FIDESlib::CKKS::RNSPoly a(cc, cc.L);
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_NONE>(state.range(1));
         CudaCheckErrorMod;
@@ -272,7 +272,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyNoneModUpModDown)(benchmark::State& s
         FIDESlib::CKKS::RNSPoly a(cc, state.range(2));
         auto start = std::chrono::high_resolution_clock::now();
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         a.moddown<FIDESlib::ALGO_NONE>(state.range(1));
         CudaCheckErrorMod;
         auto end = std::chrono::high_resolution_clock::now();
@@ -298,7 +298,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyNoneModUpModDownContextLimbCount)(ben
         FIDESlib::CKKS::RNSPoly a(cc, cc.L);
         auto start = std::chrono::high_resolution_clock::now();
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         a.moddown<FIDESlib::ALGO_NONE>(state.range(1));
         CudaCheckErrorMod;
         auto end = std::chrono::high_resolution_clock::now();
@@ -341,7 +341,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyShoupNoRedModDown)(benchmark::State& 
         }
         FIDESlib::CKKS::RNSPoly a(cc, state.range(2));
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_SHOUP>(state.range(1));
         CudaCheckErrorMod;
@@ -367,7 +367,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyShoupNoRedModDownContextLimbCount)(be
     for (auto _ : state) {
         FIDESlib::CKKS::RNSPoly a(cc, cc.L);
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_SHOUP>(state.range(1));
         CudaCheckErrorMod;
@@ -399,7 +399,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyShoupNoRedModUpModDown)(benchmark::St
         FIDESlib::CKKS::RNSPoly a(cc, state.range(2));
         auto start = std::chrono::high_resolution_clock::now();
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         a.moddown<FIDESlib::ALGO_SHOUP>(state.range(1));
         CudaCheckErrorMod;
         auto end = std::chrono::high_resolution_clock::now();
@@ -425,7 +425,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyShoupNoRedModUpModDownContextLimbCoun
         FIDESlib::CKKS::RNSPoly a(cc, cc.L);
         auto start = std::chrono::high_resolution_clock::now();
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         a.moddown<FIDESlib::ALGO_SHOUP>(state.range(1));
         CudaCheckErrorMod;
         auto end = std::chrono::high_resolution_clock::now();
@@ -468,7 +468,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyBarretModDown)(benchmark::State& stat
         }
         FIDESlib::CKKS::RNSPoly a(cc, state.range(2));
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_BARRETT>(state.range(1));
         CudaCheckErrorMod;
@@ -494,7 +494,7 @@ BENCHMARK_DEFINE_F(FIDESlibFixture, RNSPolyBarretModDownContextLimbCount)(benchm
     for (auto _ : state) {
         FIDESlib::CKKS::RNSPoly a(cc, cc.L);
         a.modup();
-        a.generateSpecialLimbs();
+        a.generateSpecialLimbs(false);
         auto start = std::chrono::high_resolution_clock::now();
         a.moddown<FIDESlib::ALGO_BARRETT>(  state.range(1));
         CudaCheckErrorMod;
