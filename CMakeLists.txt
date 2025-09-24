@@ -160,14 +160,14 @@ set_target_properties(fideslib PROPERTIES
 
 ############### GPU Checker ###################
 
-add_executable(gpu-test GPUTest.cu)
+# add_executable(gpu-test GPUTest.cu)
 
-target_compile_options(gpu-test PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:-Wall>
-        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-lineinfo>
-        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:DEBUG>>:-G -g>
-        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:RELWITHDEBINFO>>:>
-)
+# target_compile_options(gpu-test PRIVATE
+#         $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+#         $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-lineinfo>
+#         $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:DEBUG>>:-G -g>
+#         $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:RELWITHDEBINFO>>:>
+# )
 
 if (CUDA_FOUND)
     try_run(RUN_RESULT_VAR COMPILE_RESULT_VAR
@@ -258,22 +258,22 @@ include(GoogleTest)
 set(TEST_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
 file(GLOB_RECURSE TEST_SOURCE_FILES ${TEST_SOURCE_DIR}/*.cu ${TEST_SOURCE_DIR}/*.cpp ${TEST_SOURCE_DIR}/*.cuh ${TEST_SOURCE_DIR}/*.hpp)
 
-add_executable(fideslib-test)
+# add_executable(fideslib-test)
 
-target_sources(fideslib-test PRIVATE ${TEST_SOURCE_FILES})
+# target_sources(fideslib-test PRIVATE ${TEST_SOURCE_FILES})
 
-target_link_libraries(fideslib-test
-        PRIVATE gtest
-        PRIVATE gtest_main
-        PRIVATE fideslib
-)
+# target_link_libraries(fideslib-test
+#         PRIVATE gtest
+#         PRIVATE gtest_main
+#         PRIVATE fideslib
+# )
 
-target_compile_options(fideslib-test PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:-Wall >
-        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-lineinfo -rdc=true>
-        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:DEBUG>>:-G -g>
-        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:RELWITHDEBINFO>>:-lineinfo>
-)
+# target_compile_options(fideslib-test PRIVATE
+#         $<$<COMPILE_LANGUAGE:CXX>:-Wall >
+#         $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-lineinfo -rdc=true>
+#         $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:DEBUG>>:-G -g>
+#         $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:RELWITHDEBINFO>>:-lineinfo>
+# )
 
 ############### Benchmark ###################
 
@@ -286,19 +286,26 @@ FetchContent_MakeAvailable(benchmark)
 set(BENCH_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/bench)
 file(GLOB_RECURSE BENCH_SOURCE_FILES ${BENCH_SOURCE_DIR}/*.cu ${BENCH_SOURCE_DIR}/*.cpp ${BENCH_SOURCE_DIR}/*.cuh ${BENCH_SOURCE_DIR}/*.hpp)
 
-add_executable(fideslib-bench)
+# add_executable(fideslib-bench)
 
-target_sources(fideslib-bench PRIVATE ${BENCH_SOURCE_FILES})
+# target_sources(fideslib-bench PRIVATE ${BENCH_SOURCE_FILES})
 
-target_link_libraries(fideslib-bench
-        PRIVATE benchmark::benchmark
-        PRIVATE fideslib
+# target_link_libraries(fideslib-bench
+#         PRIVATE benchmark::benchmark
+#         PRIVATE fideslib
+# )
+
+set(CUSTOMBENCH_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/custombench)
+file(GLOB_RECURSE CUSTOMBENCH_SOURCE_FILES ${CUSTOMBENCH_SOURCE_DIR}/*.cu)
+add_executable(reproduce_bench)
+target_sources(reproduce_bench PUBLIC ${CUSTOMBENCH_SOURCE_FILES})
+target_link_libraries(reproduce_bench
+        PUBLIC benchmark::benchmark
+        PUBLIC fideslib
 )
-
-target_compile_options(fideslib-bench PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:-Wall >
-        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-lineinfo -rdc=true -ltbb>
-        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:DEBUG>>:-G>
-        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:RELWITHDEBINFO>>:-lineinfo>
+target_compile_options(reproduce_bench PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-lineinfo>
+        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:DEBUG>>:-G -g>
+        $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:RELWITHDEBINFO>>:>
 )
-
