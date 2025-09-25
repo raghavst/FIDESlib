@@ -17,10 +17,10 @@ int main(int argc, char* argv[])
 {
     cudaSetDevice(0);
     lbcrypto::CCParams<lbcrypto::CryptoContextCKKSRNS> openFHE_params;
-    openFHE_params.SetMultiplicativeDepth(29);
+    openFHE_params.SetMultiplicativeDepth(23);
     openFHE_params.SetSecurityLevel(lbcrypto::HEStd_NotSet);
     openFHE_params.SetFirstModSize(60);
-    openFHE_params.SetScalingModSize(59);
+    openFHE_params.SetScalingModSize(30);
     openFHE_params.SetRingDim(1 << 16);
     openFHE_params.SetNumLargeDigits(4);
     openFHE_params.SetScalingTechnique(lbcrypto::FLEXIBLEAUTO);
@@ -37,10 +37,13 @@ int main(int argc, char* argv[])
     params = params.adaptTo(raw_param);
     std::vector<int> GPUs {0};
     FIDESlib::CKKS::Context GPUcc{params, GPUs};
-
+    GPUcc.batch = 12;
     lbcrypto::KeyPair<lbcrypto::DCRTPoly> keys = cc->KeyGen();    
     cc->EvalMultKeyGen(keys.secretKey);
     cc->EvalRotateKeyGen(keys.secretKey, {1});
+
+    std::cout << "primes size: " << params.primes.size() << std::endl;
+    std::cout << "s_primes size: " << params.Sprimes.size() << std::endl;
 
     const int row_size = 1 << 15;
     std::vector<double> message(row_size, 1);
